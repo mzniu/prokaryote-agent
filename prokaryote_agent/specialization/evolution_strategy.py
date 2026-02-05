@@ -198,14 +198,19 @@ class EvolutionStrategy:
             
             # 检测类别聚类协同
             from collections import Counter
-            category_counts = Counter(s.category for s in unlocked if s.level >= 3)
+            high_level_skills = [s for s in unlocked if s.level >= 3]
+            category_counts = Counter(s.category for s in high_level_skills)
+            
             for category, count in category_counts.items():
                 if count >= 3:
+                    # 获取该类别下的所有高等级技能ID
+                    skills_in_cluster = [s.id for s in high_level_skills if s.category == category]
                     synergies.append({
                         "type": "category_cluster",
                         "category": category.value,
                         "count": count,
-                        "value": 1.2
+                        "value": 1.2,
+                        "skills": skills_in_cluster
                     })
             
             return synergies
@@ -240,7 +245,8 @@ class EvolutionStrategy:
             if not unlockable:
                 return {"type": "unlock_skill", "target_skill_id": None}
             
-            next_skill_id = unlockable[0] if unlockable else None
+            # unlockable 现在返回的是字典 {skill_id: bool}
+            next_skill_id = next(iter(unlockable)) if unlockable else None
             if next_skill_id and next_skill_id in self.skill_tree.skills:
                 skill = self.skill_tree.skills[next_skill_id]
                 return {
@@ -285,8 +291,8 @@ class EvolutionStrategy:
         
         return {"type": goal_type, "priority": 0.5}
     
-    def get_skill_priority_matrix(self) -> Dict[str, float]:
-        """生成技能优先级矩阵"""
+    def get_skill_priority_matrix(self) -> Dict[str, Dict]:
+        """生成技能优先级矩阵，返回详细因子"""
         matrix = {}
         
         for skill_id, skill in self.skill_tree.skills.items():
@@ -296,6 +302,14 @@ class EvolutionStrategy:
             # 基础优先级
             priority = 0.5
             
+            # 因子
+            factors = {
+                'tier_value': skill.tier.value,
+                'is_combination': skill.is_combination,
+                'num_capabilities': 0, # 这里没有上下文，暂时设为0
+                'num_prerequisites': len(skill.prerequisites)
+            }
+            
             # 层级加分（低层级高优先级）
             priority += (6 - skill.tier.value) * 0.1
             
@@ -303,6 +317,7 @@ class EvolutionStrategy:
             if self.skill_tree.check_prerequisites(skill_id):
                 priority += 0.2
             
-            matrix[skill_id] = priority
+            factors['total_priority'] = priority
+            matrix[skill_id] = factors
         
         return matrix

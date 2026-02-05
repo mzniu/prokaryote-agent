@@ -147,12 +147,20 @@ class SkillUnlocker:
         支持两种调用方式：
         1. batch_check_unlockable(context) - 检查所有技能
         2. batch_check_unlockable(skill_ids, capabilities) - 检查指定技能
+        
+        返回：{skill_id: can_unlock_bool} 字典，仅包含可解锁的技能
         """
         # 如果第一个参数是字典且没有第二个参数，则检查所有技能
         if isinstance(capabilities_or_ids, dict) and capabilities is None:
             context = capabilities_or_ids
             skill_ids = list(self.skill_tree.skills.keys())
-            return {sid: self.can_unlock(sid, context) for sid in skill_ids if not self.skill_tree.skills[sid].unlocked}
+            # 只返回可解锁的技能（值为True的）
+            result = {}
+            for sid in skill_ids:
+                if not self.skill_tree.skills[sid].unlocked:
+                    if self.can_unlock(sid, context):
+                        result[sid] = True
+            return result
         
         # 否则按原API：指定技能列表
         skill_ids = capabilities_or_ids

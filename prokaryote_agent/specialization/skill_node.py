@@ -42,6 +42,37 @@ class SkillNode:
     is_combination: bool = False  # 是否为组合技能
     metadata: Dict[str, Any] = field(default_factory=dict)
     
+    def __post_init__(self):
+        """验证技能节点数据的一致性"""
+        # 确保枚举类型
+        if isinstance(self.category, str):
+            self.category = SkillCategory(self.category)
+        if isinstance(self.tier, int):
+            self.tier = SkillTier(self.tier)
+        
+        # 自动设置unlocked状态：如果level>0则视为已解锁
+        if self.level > 0:
+            self.unlocked = True
+        
+        # 验证：锁定的技能不能有熟练度
+        if self.level == 0 and self.proficiency > 0.0:
+            raise ValueError("Locked skills (level=0) cannot have proficiency > 0")
+    
+        
+        # 验证level范围
+        if not (0 <= self.level <= 5):
+            raise ValueError(f"Level must be 0-5, got {self.level}")
+        
+        # 验证proficiency范围
+        if not (0.0 <= self.proficiency <= 1.0):
+            raise ValueError(f"Proficiency must be 0.0-1.0, got {self.proficiency}")
+        
+        # 自动同步：如果level > 0，则认为已解锁
+        if self.level > 0 and not self.unlocked:
+            self.unlocked = True
+        
+        # 注：允许锁定技能有熟练度（用于从字典加载）
+    
     @property
     def skill_id(self):
         """为兼容性提供skill_id别名"""
@@ -58,28 +89,6 @@ class SkillNode:
     def is_max_level(self) -> bool:
         """检查是否达到最大等级"""
         return self.level >= 5
-    
-    def __post_init__(self):
-        """验证数据"""
-        # 确保枚举类型
-        if isinstance(self.category, str):
-            self.category = SkillCategory(self.category)
-        if isinstance(self.tier, int):
-            self.tier = SkillTier(self.tier)
-        
-        # 验证level范围
-        if not (0 <= self.level <= 5):
-            raise ValueError(f"Level must be 0-5, got {self.level}")
-        
-        # 验证proficiency范围
-        if not (0.0 <= self.proficiency <= 1.0):
-            raise ValueError(f"Proficiency must be 0.0-1.0, got {self.proficiency}")
-        
-        # 自动同步：如果level > 0，则认为已解锁
-        if self.level > 0 and not self.unlocked:
-            self.unlocked = True
-        
-        # 注：允许锁定技能有熟练度（用于从字典加载）
     
     def to_dict(self):
         """转换为字典"""
