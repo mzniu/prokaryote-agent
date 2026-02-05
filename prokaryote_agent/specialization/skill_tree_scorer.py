@@ -10,28 +10,13 @@ class SkillTreeScorer:
         self.level_system = level_system
     
     def calculate_tree_score(self) -> float:
-        """计算技能树总分（0-100）"""
-        if not self.skill_tree.skills:
-            return 0.0
+        """计算技能树总分（所有已解锁技能分数之和）"""
+        total_score = 0.0
         
-        unlocked_count = len(self.skill_tree.get_unlocked_skills())
-        total_count = len(self.skill_tree.skills)
+        for skill in self.skill_tree.get_unlocked_skills():
+            total_score += self.calculate_skill_score(skill.id)
         
-        # 解锁比例分（50分）
-        unlock_ratio = unlocked_count / total_count
-        unlock_score = unlock_ratio * 50
-        
-        # 战斗力分（50分）
-        total_power = self.level_system.get_total_power()
-        max_possible_power = len(self.skill_tree.skills) * 160  # 每个技能最大160分
-        
-        if max_possible_power > 0:
-            power_ratio = min(1.0, total_power / max_possible_power)
-            power_score = power_ratio * 50
-        else:
-            power_score = 0.0
-        
-        return unlock_score + power_score
+        return total_score
     
     def identify_specialization(self) -> Optional[str]:
         """识别专精方向（最多技能的类别）"""
