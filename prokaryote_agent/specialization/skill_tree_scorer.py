@@ -84,8 +84,34 @@ class SkillTreeScorer:
         return breakdown
     
     def calculate_skill_score(self, skill_id: str) -> float:
-        """计算单个技能的分数"""
-        return self.level_system.get_skill_power(skill_id)
+        """计算单个技能的分数
+        
+        公式: (level * 10) * tier_multiplier
+        BASIC=1.0x, INTERMEDIATE=1.5x, ADVANCED=2.0x, EXPERT=2.5x, MASTER=3.0x
+        锁定技能返回0.0
+        """
+        if skill_id not in self.skill_tree.skills:
+            return 0.0
+        
+        skill = self.skill_tree.skills[skill_id]
+        
+        # 锁定技能得分为0
+        if not skill.unlocked:
+            return 0.0
+        
+        # 基础分数 = level * 10
+        base_score = skill.level * 10
+        
+        # 层级倍数
+        tier_multiplier = {
+            1: 1.0,   # BASIC
+            2: 1.5,   # INTERMEDIATE
+            3: 2.0,   # ADVANCED
+            4: 2.5,   # EXPERT
+            5: 3.0    # MASTER
+        }.get(skill.tier.value, 1.0)
+        
+        return base_score * tier_multiplier
     
     def identify_specialization_direction(self) -> List[Tuple[str, float]]:
         """识别专精方向（返回(类别, 分数)元组列表，按分数排序）"""

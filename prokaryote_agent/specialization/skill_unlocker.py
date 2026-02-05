@@ -22,10 +22,10 @@ class SkillUnlocker:
         if not self.skill_tree.check_prerequisites(skill_id):
             return False
         
-        # 检查能力要求（简单实现）
-        required_capability_count = skill.tier.value
-        if len(capabilities) < required_capability_count:
-            return False
+        # 检查解锁条件（如果有）
+        if skill.unlock_condition:
+            if not self.evaluate_unlock_condition(skill_id, capabilities):
+                return False
         
         return True
     

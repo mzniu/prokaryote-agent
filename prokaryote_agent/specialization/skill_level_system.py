@@ -87,21 +87,23 @@ class SkillLevelSystem:
         
         return leveled_up
     
-    def get_level_bonuses(self, skill_id: str) -> Dict:
-        """获取技能等级加成"""
+    def get_level_bonuses(self, skill_id: str) -> float:
+        """获取技能等级加成倍数
+        
+        Level 1 = 1.0x (基础)
+        Level 2 = 1.5x
+        Level 3 = 2.0x
+        Level 4 = 2.5x
+        Level 5 = 3.0x
+        公式: 1.0 + (level - 1) * 0.5
+        """
         if skill_id not in self.skill_tree.skills:
-            return {}
+            return 0.0
         
         skill = self.skill_tree.skills[skill_id]
         
-        # 每级提供不同加成
-        bonuses = {
-            "power_bonus": skill.level * 10,
-            "efficiency_bonus": skill.level * 0.05,  # 5%每级
-            "quality_bonus": skill.level * 0.1  # 10%每级
-        }
-        
-        return bonuses
+        # 等级倍数: 1 + (level-1)*0.5
+        return 1.0 + (skill.level - 1) * 0.5
     
     def get_progress_to_next_level(self, skill_id: str) -> Dict:
         """获取到下一级的进度信息"""
