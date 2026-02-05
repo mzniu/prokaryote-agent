@@ -142,7 +142,8 @@ class TestGeneticTransmitter(unittest.TestCase):
         self.assertIn("high_fitness", keep_names)
         
         # 低适应度应该在淘汰列表
-        self.assertIn("low_fitness", result["eliminate"])
+        eliminate_names = [c["name"] for c in result["eliminate"]]
+        self.assertIn("low_fitness", eliminate_names)
     
     def test_select_capabilities_high_usage(self):
         """测试高使用率能力被保留"""

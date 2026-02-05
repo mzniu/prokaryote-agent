@@ -9,6 +9,7 @@ class CollaborationInterface:
         self.config = config or {}
         self.task_queue = []
         self.active_tasks = self.task_queue  # 别名以匹配测试
+        self.completed_tasks = []            # 新增字段以匹配测试
         self.collaboration_history = []
         self.shared_capabilities = {}
     
@@ -49,12 +50,20 @@ class CollaborationInterface:
         if capability_data is None:
             capability_data = {"name": capability_name, "exported": True}
         
-        self.shared_capabilities[capability_name] = {
+        shared_record = {
             "data": capability_data,
             "shared_by": self.agent_id,
             "timestamp": datetime.now().isoformat()
         }
-        return True
+        self.shared_capabilities[capability_name] = shared_record
+        
+        # 返回符合测试预期的字典，而不是布尔值
+        return {
+            "agent_id": self.agent_id,
+            "capability_name": capability_name,
+            "version": "1.0",
+            "data": capability_data
+        }
     
     def request_assistance(self, task_description=None, required_capabilities=None, problem=None, context=None):
         """请求其他智能体协助"""

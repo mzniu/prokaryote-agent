@@ -32,7 +32,40 @@ class EvolutionDaemon:
         self.evolution_count_in_generation = 0
         self.agent_messages = []
         self.restart_threshold = self.config.get("restart_threshold", 10)
-    
+        self.current_generation = 0  # 新增字段以匹配测试
+        self.daemon_running = False  # 新增字段以匹配测试
+
+    def _handle_agent_message(self, message):
+        """处理来自智能体的消息"""
+        if message:
+            self.agent_messages.append(message)
+            msg_type = message.get("type", "unknown")
+            event_type = message.get("event", "unknown")
+            
+            # 兼容两种格式：type="evolution_success" 或 event="EVOLUTION_SUCCESS"
+            if msg_type == "evolution_success" or event_type == "EVOLUTION_SUCCESS":
+                self.evolution_count_in_generation += 1
+            elif msg_type == "heartbeat" or event_type == "HEARTBEAT":
+                self.last_heartbeat_time = datetime.now().isoformat()
+            
+            return True
+        return False
+        
+    def handle_agent_message(self, message):
+        """处理消息的公有包装"""
+        return self._handle_agent_message(message)
+        
+    def get_status(self):
+        """获取守护进程状态"""
+        return {
+            "running": self.running,
+            "daemon_running": self.daemon_running,
+            "evolution_count": self.evolution_count_in_generation,
+            "threshold": self.config.get("evolution_threshold", 10),
+            "current_generation": self.current_generation,
+            "agent_alive": self._is_agent_alive()
+        }
+
     def _load_config_from_file(self, path):
         """从文件加载配置"""
         try:

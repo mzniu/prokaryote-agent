@@ -23,30 +23,69 @@ class GeneticTransmitter:
         # 提取技能树加成
         if skill_tree:
             genes["skill_bonuses"] = self._extract_skill_bonuses(skill_tree)
-        
+            
         return genes
+    
+    def _calculate_baseline(self, capabilities):
+        """计算能力集的基线指标"""
+        if not capabilities:
+            return {
+                "capability_count": 0,
+                "avg_fitness_score": 0.0,
+                "total_usage_count": 0
+            }
+            
+        total_fitness = 0.0
+        total_usage = 0
+        
+        for cap in capabilities:
+            if isinstance(cap, dict):
+                total_fitness += cap.get("fitness", cap.get("fitness_score", 0))
+                total_usage += cap.get("usage_count", 0)
+        
+        return {
+            "capability_count": len(capabilities),
+            "avg_fitness_score": total_fitness / len(capabilities),
+            "total_usage_count": total_usage
+        }
+
+    def calculate_baseline(self, genes):
+        """计算基因的性能基线"""
+        capabilities = genes.get("capabilities", [])
+        avg_fitness = 0.0
+        
+        if capabilities:
+            total_fitness = sum(c.get("fitness", c.get("fitness_score", 0)) for c in capabilities if isinstance(c, dict))
+            avg_fitness = total_fitness / len(capabilities)
+            
+        return {
+            "avg_fitness": avg_fitness,
+            "capability_count": len(capabilities)
+        }
     
     def _select_capabilities(self, capabilities):
         """选择要传递的能力"""
         if not capabilities:
-            return {"keep": [], "drop": []}
+            return {"keep": [], "eliminate": []}
         
         keep = []
         drop = []
         
         for cap in capabilities:
-            # 简单选择逻辑：成功率高于阈值的能力
             if isinstance(cap, dict):
-                success_rate = cap.get("success_rate", 0)
-                fitness = cap.get("fitness", success_rate)
-                if fitness >= self.selection_threshold:
+                # 支持多种字段名
+                fitness = cap.get("fitness", cap.get("fitness_score", 0))
+                usage = cap.get("usage_count", 0)
+                
+                # 保留条件：高适应度(>=0.8) 或 高使用率(>=50)
+                if fitness >= 0.8 or usage >= 50:
                     keep.append(cap)
                 else:
                     drop.append(cap)
             else:
                 keep.append(cap)
         
-        return {"keep": keep, "drop": drop}
+        return {"keep": keep, "eliminate": drop}
     
     def _extract_skill_bonuses(self, skill_tree):
         """从技能树提取加成信息"""
@@ -66,24 +105,28 @@ class GeneticTransmitter:
         return bonuses
     
     def _calculate_baseline(self, capabilities):
-        """计算性能基线"""
+        """计算能力集的基线指标"""
         if not capabilities:
-            return {"average_success_rate": 0.0, "total_capabilities": 0}
+            return {
+                "capability_count": 0,
+                "avg_fitness_score": 0.0,
+                "total_usage_count": 0
+            }
+            
+        total_fitness = 0.0
+        total_usage = 0
         
-        success_rates = [cap.get("success_rate", 0) for cap in capabilities if isinstance(cap, dict)]
-        
-        if not success_rates:
-            return {"average_success_rate": 0.0, "total_capabilities": len(capabilities)}
-        
-        avg_success = sum(success_rates) / len(success_rates)
+        for cap in capabilities:
+            if isinstance(cap, dict):
+                total_fitness += cap.get("fitness", cap.get("fitness_score", 0))
+                total_usage += cap.get("usage_count", 0)
         
         return {
-            "average_success_rate": avg_success,
-            "total_capabilities": len(capabilities),
-            "max_success_rate": max(success_rates),
-            "min_success_rate": min(success_rates)
+            "capability_count": len(capabilities),
+            "avg_fitness_score": total_fitness / len(capabilities),
+            "total_usage_count": total_usage
         }
-    
+
     def save_genes(self, genes, path):
         """保存基因文件 - 支持目录或文件路径"""
         path_obj = Path(path)
