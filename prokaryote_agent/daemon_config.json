@@ -42,6 +42,8 @@
   
   "specialization": {
     "default_domain": "legal",
+    "domain": "legal",
+    "domain_name": "法律专家",
     "skill_tree_file": "specialization/domains/legal_tree.json",
     "skill_tree_path": "./prokaryote_agent/specialization/domains/legal_tree.json",
     "evolution_strategy": "balanced",

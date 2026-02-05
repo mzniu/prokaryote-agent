@@ -2,6 +2,10 @@
 """
 Prokaryote Agent - 简化版进化脚本
 由 daemon 启动，执行进化循环
+
+进化优先级：
+1. 有明确目标 → 执行目标
+2. 没有目标 → 根据技能树自动进化技能
 """
 
 import os
@@ -12,6 +16,7 @@ import logging
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, Dict, List, Any
 
 # 确保能找到模块
 sys.path.insert(0, str(Path(__file__).parent))
@@ -25,21 +30,195 @@ from prokaryote_agent import (
 from prokaryote_agent.goal_manager import EvolutionGoalManager, GoalStatus
 
 
+class SkillTreeManager:
+    """技能树管理器"""
+    
+    def __init__(self, skill_tree_path: str):
+        self.skill_tree_path = Path(skill_tree_path)
+        self.skill_tree: Dict[str, Any] = {}
+        self.load_skill_tree()
+    
+    def load_skill_tree(self) -> bool:
+        """加载技能树"""
+        if not self.skill_tree_path.exists():
+            return False
+        
+        with open(self.skill_tree_path, 'r', encoding='utf-8') as f:
+            self.skill_tree = json.load(f)
+        return True
+    
+    def save_skill_tree(self):
+        """保存技能树"""
+        with open(self.skill_tree_path, 'w', encoding='utf-8') as f:
+            json.dump(self.skill_tree, f, ensure_ascii=False, indent=2)
+    
+    def get_next_skill_to_evolve(self) -> Optional[Dict[str, Any]]:
+        """
+        获取下一个要进化的技能
+        
+        优先级：
+        1. 已解锁但未满级的技能（按tier升序，level降序）
+        2. 可解锁的新技能（前置条件满足）
+        """
+        skills = self.skill_tree.get('skills', {})
+        
+        # 1. 找已解锁但未满级的技能
+        unlocked_skills = []
+        for skill_id, skill in skills.items():
+            if skill.get('unlocked', False):
+                level = skill.get('level', 0)
+                max_level = self._get_max_level_for_tier(skill.get('tier', 'basic'))
+                if level < max_level:
+                    unlocked_skills.append({
+                        'id': skill_id,
+                        **skill,
+                        'max_level': max_level
+                    })
+        
+        if unlocked_skills:
+            # 按 tier 优先级排序（basic > intermediate > advanced > master > expert）
+            tier_order = {'basic': 0, 'intermediate': 1, 'advanced': 2, 'master': 3, 'expert': 4}
+            unlocked_skills.sort(key=lambda s: (tier_order.get(s.get('tier', 'basic'), 0), -s.get('level', 0)))
+            return unlocked_skills[0]
+        
+        # 2. 找可解锁的新技能
+        for skill_id, skill in skills.items():
+            if not skill.get('unlocked', False):
+                if self._can_unlock(skill_id, skill, skills):
+                    return {'id': skill_id, **skill, 'needs_unlock': True}
+        
+        return None
+    
+    def _get_max_level_for_tier(self, tier: str) -> int:
+        """获取各层级的最大等级"""
+        max_levels = {
+            'basic': 20,
+            'intermediate': 30,
+            'advanced': 40,
+            'master': 50,
+            'expert': 100
+        }
+        return max_levels.get(tier, 20)
+    
+    def _can_unlock(self, skill_id: str, skill: Dict, all_skills: Dict) -> bool:
+        """检查技能是否可以解锁"""
+        prerequisites = skill.get('prerequisites', [])
+        if not prerequisites:
+            return True
+        
+        # 检查所有前置技能是否达标
+        for prereq_id in prerequisites:
+            prereq = all_skills.get(prereq_id)
+            if not prereq:
+                return False
+            if not prereq.get('unlocked', False):
+                return False
+            # 前置技能需要达到一定等级（根据unlock_condition判断）
+            prereq_level = prereq.get('level', 0)
+            required_level = self._parse_required_level(skill.get('unlock_condition', ''))
+            if prereq_level < required_level:
+                return False
+        
+        return True
+    
+    def _parse_required_level(self, condition: str) -> int:
+        """解析解锁条件中的等级要求"""
+        # 例如 "前置技能达到10级" -> 10
+        import re
+        match = re.search(r'(\d+)级', condition)
+        if match:
+            return int(match.group(1))
+        return 10  # 默认10级
+    
+    def level_up_skill(self, skill_id: str, amount: int = 1) -> bool:
+        """提升技能等级"""
+        skills = self.skill_tree.get('skills', {})
+        if skill_id not in skills:
+            return False
+        
+        skill = skills[skill_id]
+        if not skill.get('unlocked', False):
+            return False
+        
+        current_level = skill.get('level', 0)
+        max_level = self._get_max_level_for_tier(skill.get('tier', 'basic'))
+        
+        new_level = min(current_level + amount, max_level)
+        skill['level'] = new_level
+        skill['proficiency'] = new_level / max_level
+        
+        self.save_skill_tree()
+        return True
+    
+    def unlock_skill(self, skill_id: str) -> bool:
+        """解锁技能"""
+        skills = self.skill_tree.get('skills', {})
+        if skill_id not in skills:
+            return False
+        
+        skill = skills[skill_id]
+        if skill.get('unlocked', False):
+            return True  # 已解锁
+        
+        if not self._can_unlock(skill_id, skill, skills):
+            return False
+        
+        skill['unlocked'] = True
+        skill['level'] = 1
+        skill['proficiency'] = 0.0
+        
+        self.save_skill_tree()
+        return True
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """获取技能树统计"""
+        skills = self.skill_tree.get('skills', {})
+        total = len(skills)
+        unlocked = sum(1 for s in skills.values() if s.get('unlocked', False))
+        
+        # 按tier统计
+        tier_stats = {}
+        for skill in skills.values():
+            tier = skill.get('tier', 'basic')
+            if tier not in tier_stats:
+                tier_stats[tier] = {'total': 0, 'unlocked': 0, 'total_level': 0}
+            tier_stats[tier]['total'] += 1
+            if skill.get('unlocked', False):
+                tier_stats[tier]['unlocked'] += 1
+                tier_stats[tier]['total_level'] += skill.get('level', 0)
+        
+        return {
+            'total': total,
+            'unlocked': unlocked,
+            'locked': total - unlocked,
+            'tier_stats': tier_stats
+        }
+
+
 class SimpleEvolutionAgent:
     """简化版进化Agent"""
     
-    def __init__(self, goal_file: str = None, interval: int = 30):
+    def __init__(self, goal_file: str = None, interval: int = 30, config_path: str = None):
         """
         初始化
         
         Args:
             goal_file: 目标文件路径
             interval: 检查间隔（秒）
+            config_path: daemon配置文件路径
         """
         self.goal_file = goal_file or "evolution_goals.md"
         self.interval = interval
         self.running = False
         self.evolution_count = 0
+        self.skill_evolution_count = 0
+        
+        # 加载配置获取技能树路径
+        self.config_path = config_path or "prokaryote_agent/daemon_config.json"
+        self.config = self._load_config()
+        
+        # 技能树管理器
+        self.skill_tree_manager: Optional[SkillTreeManager] = None
         
         # 设置日志
         logging.basicConfig(
@@ -53,6 +232,14 @@ class SimpleEvolutionAgent:
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
     
+    def _load_config(self) -> Dict[str, Any]:
+        """加载配置"""
+        config_path = Path(self.config_path)
+        if config_path.exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return {}
+    
     def _signal_handler(self, signum, frame):
         """信号处理"""
         print("\n⚠️  收到停止信号，正在关闭...")
@@ -65,7 +252,7 @@ class SimpleEvolutionAgent:
         print("=" * 50)
         
         # 初始化核心系统
-        print("\n[1/2] 初始化核心系统...")
+        print("\n[1/3] 初始化核心系统...")
         result = init_prokaryote()
         if not result.get('success'):
             print(f"❌ 初始化失败: {result.get('msg')}")
@@ -73,7 +260,7 @@ class SimpleEvolutionAgent:
         print("✅ 核心系统初始化成功")
         
         # 加载目标
-        print("\n[2/2] 加载进化目标...")
+        print("\n[2/3] 加载进化目标...")
         self.goal_manager = EvolutionGoalManager(self.goal_file)
         goals = self.goal_manager.load_goals()
         
@@ -81,6 +268,29 @@ class SimpleEvolutionAgent:
         print(f"✅ 已加载 {stats['total']} 个目标")
         print(f"   - 待执行: {stats['pending']}")
         print(f"   - 已完成: {stats['completed']}")
+        
+        # 加载技能树
+        print("\n[3/3] 加载技能树...")
+        skill_tree_path = self.config.get('specialization', {}).get('skill_tree_path')
+        if skill_tree_path:
+            # 处理相对路径（配置中可能是 ./xxx 或 xxx 形式）
+            if skill_tree_path.startswith('./'):
+                full_path = Path(skill_tree_path[2:])
+            else:
+                full_path = Path(skill_tree_path)
+            
+            if full_path.exists():
+                self.skill_tree_manager = SkillTreeManager(str(full_path))
+                tree_stats = self.skill_tree_manager.get_statistics()
+                domain = self.config.get('specialization', {}).get('domain', 'unknown')
+                print(f"✅ 技能树已加载: {domain}")
+                print(f"   - 总技能: {tree_stats['total']}")
+                print(f"   - 已解锁: {tree_stats['unlocked']}")
+                print(f"   - 待解锁: {tree_stats['locked']}")
+            else:
+                print(f"⚠️  技能树文件不存在: {full_path}")
+        else:
+            print("⚠️  未配置技能树路径")
         
         return True
     
@@ -109,23 +319,29 @@ class SimpleEvolutionAgent:
                 time.sleep(5)
         
         print("\n👋 进化系统已停止")
+        print(f"   - 目标完成: {self.evolution_count}")
+        print(f"   - 技能进化: {self.skill_evolution_count}")
     
     def _evolution_cycle(self):
         """单次进化循环"""
-        # 获取下一个目标
+        # 优先执行明确的目标
         goal = self.goal_manager.get_next_goal()
         
-        if not goal:
-            self.logger.info("📋 没有待执行的目标")
-            return
-        
+        if goal:
+            self._execute_goal_evolution(goal)
+        else:
+            # 没有目标时，根据技能树自动进化
+            self._execute_skill_evolution()
+    
+    def _execute_goal_evolution(self, goal):
+        """执行目标进化"""
         self.logger.info(f"🎯 处理目标: {goal.title}")
         
         # 标记为进行中
         self.goal_manager.mark_goal_in_progress(goal)
         
         try:
-            # 执行进化（这里是简化版，实际应该调用能力生成器）
+            # 执行进化
             success = self._execute_goal(goal)
             
             if success:
@@ -139,6 +355,67 @@ class SimpleEvolutionAgent:
         except Exception as e:
             self.goal_manager.mark_goal_failed(goal, str(e))
             self.logger.error(f"❌ 目标异常: {e}")
+    
+    def _execute_skill_evolution(self):
+        """根据技能树执行技能进化"""
+        if not self.skill_tree_manager:
+            self.logger.info("📋 没有待执行的目标，也没有技能树配置")
+            return
+        
+        # 获取下一个要进化的技能
+        skill = self.skill_tree_manager.get_next_skill_to_evolve()
+        
+        if not skill:
+            self.logger.info("🏆 所有技能已达到最高等级!")
+            return
+        
+        skill_id = skill['id']
+        skill_name = skill.get('name', skill_id)
+        current_level = skill.get('level', 0)
+        max_level = skill.get('max_level', 20)
+        needs_unlock = skill.get('needs_unlock', False)
+        
+        if needs_unlock:
+            # 解锁新技能
+            self.logger.info(f"🔓 解锁新技能: {skill_name}")
+            self.logger.info(f"   描述: {skill.get('description', '')}")
+            
+            success = self._train_skill_unlock(skill)
+            
+            if success:
+                self.skill_tree_manager.unlock_skill(skill_id)
+                self.skill_evolution_count += 1
+                self.logger.info(f"✅ 技能已解锁: {skill_name} (Lv.1)")
+            else:
+                self.logger.warning(f"❌ 解锁失败: {skill_name}")
+        else:
+            # 提升已有技能
+            self.logger.info(f"📈 提升技能: {skill_name} (Lv.{current_level} → Lv.{current_level + 1})")
+            self.logger.info(f"   层级: {skill.get('tier', 'basic').capitalize()}")
+            self.logger.info(f"   进度: {current_level}/{max_level}")
+            
+            success = self._train_skill_level_up(skill)
+            
+            if success:
+                self.skill_tree_manager.level_up_skill(skill_id, 1)
+                self.skill_evolution_count += 1
+                self.logger.info(f"✅ 技能提升: {skill_name} (Lv.{current_level + 1})")
+            else:
+                self.logger.warning(f"❌ 提升失败: {skill_name}")
+    
+    def _train_skill_unlock(self, skill: Dict) -> bool:
+        """训练解锁技能（实际应该调用能力生成器）"""
+        # TODO: 集成实际的能力生成逻辑
+        # 目前只是模拟训练过程
+        time.sleep(2)
+        return True
+    
+    def _train_skill_level_up(self, skill: Dict) -> bool:
+        """训练提升技能等级（实际应该调用能力生成器）"""
+        # TODO: 集成实际的能力生成逻辑
+        # 目前只是模拟训练过程
+        time.sleep(2)
+        return True
     
     def _execute_goal(self, goal) -> bool:
         """执行目标（简化版）"""

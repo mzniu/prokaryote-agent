@@ -1,5 +1,9 @@
 {
-  "root_skills": ["legal_research_basic", "document_drafting_basic", "case_analysis_basic"],
+  "root_skills": [
+    "legal_research_basic",
+    "document_drafting_basic",
+    "case_analysis_basic"
+  ],
   "skills": {
     "legal_research_basic": {
       "id": "legal_research_basic",
@@ -7,13 +11,15 @@
       "tier": "basic",
       "category": "analytical",
       "description": "检索法律条文、判例和法规的能力",
-      "level": 0,
-      "proficiency": 0.0,
+      "level": 8,
+      "proficiency": 0.4,
       "prerequisites": [],
       "unlocked": true,
       "unlock_condition": "自动解锁",
       "is_combination": false,
-      "metadata": {"domain": "legal"}
+      "metadata": {
+        "domain": "legal"
+      }
     },
     "document_drafting_basic": {
       "id": "document_drafting_basic",
@@ -27,7 +33,9 @@
       "unlocked": true,
       "unlock_condition": "自动解锁",
       "is_combination": false,
-      "metadata": {"domain": "legal"}
+      "metadata": {
+        "domain": "legal"
+      }
     },
     "case_analysis_basic": {
       "id": "case_analysis_basic",
@@ -41,7 +49,9 @@
       "unlocked": true,
       "unlock_condition": "自动解锁",
       "is_combination": false,
-      "metadata": {"domain": "legal"}
+      "metadata": {
+        "domain": "legal"
+      }
     },
     "contract_review_intermediate": {
       "id": "contract_review_intermediate",
@@ -51,11 +61,17 @@
       "description": "审查合同条款、识别风险点和漏洞",
       "level": 0,
       "proficiency": 0.0,
-      "prerequisites": ["document_drafting_basic", "case_analysis_basic"],
+      "prerequisites": [
+        "document_drafting_basic",
+        "case_analysis_basic"
+      ],
       "unlocked": false,
       "unlock_condition": "前置技能达到10级",
       "is_combination": false,
-      "metadata": {"domain": "legal", "specialization": "contract"}
+      "metadata": {
+        "domain": "legal",
+        "specialization": "contract"
+      }
     },
     "legal_reasoning_intermediate": {
       "id": "legal_reasoning_intermediate",
@@ -65,11 +81,16 @@
       "description": "运用法律逻辑进行推理和论证",
       "level": 0,
       "proficiency": 0.0,
-      "prerequisites": ["legal_research_basic", "case_analysis_basic"],
+      "prerequisites": [
+        "legal_research_basic",
+        "case_analysis_basic"
+      ],
       "unlocked": false,
       "unlock_condition": "前置技能达到10级",
       "is_combination": false,
-      "metadata": {"domain": "legal"}
+      "metadata": {
+        "domain": "legal"
+      }
     },
     "compliance_check_intermediate": {
       "id": "compliance_check_intermediate",
@@ -79,11 +100,16 @@
       "description": "检查业务活动是否符合法律法规",
       "level": 0,
       "proficiency": 0.0,
-      "prerequisites": ["legal_research_basic"],
+      "prerequisites": [
+        "legal_research_basic"
+      ],
       "unlocked": false,
       "unlock_condition": "前置技能达到15级",
       "is_combination": false,
-      "metadata": {"domain": "legal", "specialization": "compliance"}
+      "metadata": {
+        "domain": "legal",
+        "specialization": "compliance"
+      }
     },
     "litigation_strategy_advanced": {
       "id": "litigation_strategy_advanced",
@@ -93,11 +119,17 @@
       "description": "制定诉讼方案和法律策略",
       "level": 0,
       "proficiency": 0.0,
-      "prerequisites": ["legal_reasoning_intermediate", "case_analysis_basic"],
+      "prerequisites": [
+        "legal_reasoning_intermediate",
+        "case_analysis_basic"
+      ],
       "unlocked": false,
       "unlock_condition": "前置技能达到25级",
       "is_combination": false,
-      "metadata": {"domain": "legal", "specialization": "litigation"}
+      "metadata": {
+        "domain": "legal",
+        "specialization": "litigation"
+      }
     },
     "risk_assessment_advanced": {
       "id": "risk_assessment_advanced",
@@ -107,11 +139,16 @@
       "description": "全面评估法律风险并提出防范建议",
       "level": 0,
       "proficiency": 0.0,
-      "prerequisites": ["contract_review_intermediate", "compliance_check_intermediate"],
+      "prerequisites": [
+        "contract_review_intermediate",
+        "compliance_check_intermediate"
+      ],
       "unlocked": false,
       "unlock_condition": "前置技能达到30级",
       "is_combination": false,
-      "metadata": {"domain": "legal"}
+      "metadata": {
+        "domain": "legal"
+      }
     },
     "negotiation_advanced": {
       "id": "negotiation_advanced",
@@ -121,11 +158,15 @@
       "description": "代表客户进行法律谈判和调解",
       "level": 0,
       "proficiency": 0.0,
-      "prerequisites": ["litigation_strategy_advanced"],
+      "prerequisites": [
+        "litigation_strategy_advanced"
+      ],
       "unlocked": false,
       "unlock_condition": "前置技能达到35级",
       "is_combination": false,
-      "metadata": {"domain": "legal"}
+      "metadata": {
+        "domain": "legal"
+      }
     },
     "legal_consulting_master": {
       "id": "legal_consulting_master",
@@ -135,11 +176,16 @@
       "description": "提供全面的法律咨询和战略建议",
       "level": 0,
       "proficiency": 0.0,
-      "prerequisites": ["risk_assessment_advanced", "negotiation_advanced"],
+      "prerequisites": [
+        "risk_assessment_advanced",
+        "negotiation_advanced"
+      ],
       "unlocked": false,
       "unlock_condition": "前置技能达到50级",
       "is_combination": false,
-      "metadata": {"domain": "legal"}
+      "metadata": {
+        "domain": "legal"
+      }
     },
     "legal_innovation_master": {
       "id": "legal_innovation_master",
@@ -149,11 +195,16 @@
       "description": "运用AI和技术手段创新法律服务",
       "level": 0,
       "proficiency": 0.0,
-      "prerequisites": ["risk_assessment_advanced"],
+      "prerequisites": [
+        "risk_assessment_advanced"
+      ],
       "unlocked": false,
       "unlock_condition": "前置技能达到55级",
       "is_combination": false,
-      "metadata": {"domain": "legal", "specialization": "legaltech"}
+      "metadata": {
+        "domain": "legal",
+        "specialization": "legaltech"
+      }
     },
     "cross_border_master": {
       "id": "cross_border_master",
@@ -163,11 +214,17 @@
       "description": "处理国际法律事务和跨境合规",
       "level": 0,
       "proficiency": 0.0,
-      "prerequisites": ["compliance_check_intermediate", "legal_consulting_master"],
+      "prerequisites": [
+        "compliance_check_intermediate",
+        "legal_consulting_master"
+      ],
       "unlocked": false,
       "unlock_condition": "前置技能达到60级",
       "is_combination": false,
-      "metadata": {"domain": "legal", "specialization": "international"}
+      "metadata": {
+        "domain": "legal",
+        "specialization": "international"
+      }
     },
     "legal_thought_leader_expert": {
       "id": "legal_thought_leader_expert",
@@ -177,11 +234,17 @@
       "description": "引领法律理论发展和实践创新",
       "level": 0,
       "proficiency": 0.0,
-      "prerequisites": ["legal_consulting_master", "legal_innovation_master", "cross_border_master"],
+      "prerequisites": [
+        "legal_consulting_master",
+        "legal_innovation_master",
+        "cross_border_master"
+      ],
       "unlocked": false,
       "unlock_condition": "所有大师技能达到70级",
       "is_combination": true,
-      "metadata": {"domain": "legal"}
+      "metadata": {
+        "domain": "legal"
+      }
     }
   },
   "metadata": {
@@ -192,6 +255,12 @@
     "created_at": "2026-02-05T00:00:00Z",
     "updated_at": "2026-02-05T00:00:00Z",
     "author": "prokaryote-agent",
-    "tags": ["legal", "law", "contract", "litigation", "compliance"]
+    "tags": [
+      "legal",
+      "law",
+      "contract",
+      "litigation",
+      "compliance"
+    ]
   }
 }
