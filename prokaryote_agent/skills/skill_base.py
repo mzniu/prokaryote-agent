@@ -30,7 +30,7 @@ class SkillMetadata:
     name: str                              # 技能名称
     version: str = "1.0.0"                 # 版本号
     tier: str = "basic"                    # 层级
-    level: int = 1                         # 当前等级
+    level: int = 0                         # 当前等级（从0开始，学习后升到1）
     description: str = ""                  # 技能描述
     domain: str = "general"                # 所属领域
     

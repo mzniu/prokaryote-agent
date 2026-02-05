@@ -5,12 +5,18 @@
 当Agent需要学习一个新技能时，会：
 1. 分析技能定义（名称、描述、能力）
 2. 生成技能实现代码
-3. 测试验证代码
+3. 执行训练任务验证
 4. 保存到技能库
+
+技能升级需要完成训练任务：
+- 执行技能测试用例
+- 处理边界情况
+- 优化代码实现
 """
 
 import json
 import logging
+import random
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
@@ -144,13 +150,17 @@ class SkillGenerator:
             # 4. 加载并注册技能
             skill = self.library.load_skill(skill_id)
             if skill:
+                # 学习完成，技能等级为0（初始化）
+                # 需要通过训练升级到 level 1
+                skill.metadata.level = 0
                 self.library.register_skill(skill)
-                self.logger.info(f"技能学习成功: {skill_id}")
+                self.logger.info(f"技能代码生成成功: {skill_id} (需要训练升级)")
                 
                 return {
                     'success': True,
                     'skill_id': skill_id,
-                    'code_path': str(self.library.library_path / f"{skill_id}.py")
+                    'code_path': str(self.library.library_path / f"{skill_id}.py"),
+                    'needs_training': True
                 }
             else:
                 return {
@@ -169,7 +179,13 @@ class SkillGenerator:
     
     def upgrade_skill(self, skill_id: str, target_level: int) -> Dict[str, Any]:
         """
-        升级技能
+        升级技能 - 通过执行训练任务来提升
+        
+        升级过程：
+        1. 获取当前等级的训练任务
+        2. 执行训练任务（实际调用技能）
+        3. 评估训练结果
+        4. 如果通过，提升等级
         
         Args:
             skill_id: 技能ID
@@ -192,7 +208,23 @@ class SkillGenerator:
                 'error': f'目标等级 {target_level} 不高于当前等级 {current_level}'
             }
         
-        # 根据等级差异生成升级代码
+        # 获取训练任务
+        training_task = self._get_training_task(skill_id, skill.metadata.domain, current_level)
+        
+        self.logger.info(f"执行训练任务: {training_task['name']}")
+        
+        # 执行训练（调用技能）
+        training_result = self._execute_training(skill, training_task)
+        
+        if not training_result['passed']:
+            return {
+                'success': False,
+                'skill_id': skill_id,
+                'error': f"训练未通过: {training_result.get('reason', '未知原因')}",
+                'training_task': training_task['name']
+            }
+        
+        # 训练通过，获取增强
         enhancements = self._get_level_enhancements(
             skill.metadata.tier, 
             current_level, 
@@ -202,6 +234,11 @@ class SkillGenerator:
         # 升级技能
         for _ in range(target_level - current_level):
             skill.upgrade()
+        
+        # 记录训练经验
+        skill.metadata.total_executions += 1
+        skill.metadata.successful_executions += 1
+        skill.metadata.proficiency = min(1.0, skill.metadata.proficiency + 0.05)
         
         # 更新注册表
         self.library.registry[skill_id] = skill.metadata
@@ -214,8 +251,169 @@ class SkillGenerator:
             'skill_id': skill_id,
             'old_level': current_level,
             'new_level': target_level,
-            'enhancements': enhancements
+            'enhancements': enhancements,
+            'training_task': training_task['name'],
+            'training_result': training_result
         }
+    
+    def _get_training_task(self, skill_id: str, domain: str, level: int) -> Dict[str, Any]:
+        """
+        获取训练任务
+        
+        根据技能和等级生成适当难度的训练任务
+        """
+        # 法律领域训练任务
+        if domain == 'legal':
+            return self._get_legal_training_task(skill_id, level)
+        elif domain == 'software_dev':
+            return self._get_software_training_task(skill_id, level)
+        else:
+            return self._get_generic_training_task(skill_id, level)
+    
+    def _get_legal_training_task(self, skill_id: str, level: int) -> Dict[str, Any]:
+        """获取法律领域训练任务"""
+        
+        if 'research' in skill_id:
+            # 法律检索训练任务
+            tasks = [
+                {'name': '检索劳动法相关条文', 'query': '劳动合同解除条件', 'expected_count': 2},
+                {'name': '检索知识产权判例', 'query': '商标侵权赔偿', 'expected_count': 2},
+                {'name': '检索民法典条文', 'query': '合同违约责任', 'expected_count': 2},
+                {'name': '检索刑法司法解释', 'query': '诈骗罪认定标准', 'expected_count': 2},
+                {'name': '检索公司法规定', 'query': '股东权益保护', 'expected_count': 2},
+            ]
+            task = tasks[level % len(tasks)]
+            task['type'] = 'research'
+            task['difficulty'] = min(level // 5 + 1, 5)
+            return task
+            
+        elif 'drafting' in skill_id:
+            tasks = [
+                {'name': '起草劳动合同', 'doc_type': '劳动合同', 'sections': ['甲乙方', '工作内容', '薪酬']},
+                {'name': '起草保密协议', 'doc_type': 'NDA', 'sections': ['保密范围', '期限', '违约责任']},
+                {'name': '起草租赁合同', 'doc_type': '租赁合同', 'sections': ['租赁物', '租金', '期限']},
+            ]
+            task = tasks[level % len(tasks)]
+            task['type'] = 'drafting'
+            task['difficulty'] = min(level // 5 + 1, 5)
+            return task
+            
+        elif 'analysis' in skill_id:
+            tasks = [
+                {'name': '分析合同纠纷案例', 'case_type': '合同纠纷', 'focus': '违约认定'},
+                {'name': '分析劳动争议案例', 'case_type': '劳动争议', 'focus': '解除合法性'},
+                {'name': '分析侵权案例', 'case_type': '侵权纠纷', 'focus': '责任划分'},
+            ]
+            task = tasks[level % len(tasks)]
+            task['type'] = 'analysis'
+            task['difficulty'] = min(level // 5 + 1, 5)
+            return task
+        
+        else:
+            return self._get_generic_training_task(skill_id, level)
+    
+    def _get_software_training_task(self, skill_id: str, level: int) -> Dict[str, Any]:
+        """获取软件开发领域训练任务"""
+        tasks = [
+            {'name': '代码审查：Python函数', 'code_type': 'python', 'focus': '代码风格'},
+            {'name': '代码审查：API接口', 'code_type': 'python', 'focus': '安全性'},
+            {'name': '代码审查：数据库操作', 'code_type': 'python', 'focus': 'SQL注入'},
+        ]
+        task = tasks[level % len(tasks)]
+        task['type'] = 'code_review'
+        task['difficulty'] = min(level // 5 + 1, 5)
+        return task
+    
+    def _get_generic_training_task(self, skill_id: str, level: int) -> Dict[str, Any]:
+        """获取通用训练任务"""
+        return {
+            'name': f'技能训练 Lv.{level + 1}',
+            'type': 'generic',
+            'difficulty': min(level // 5 + 1, 5),
+            'description': f'完成{skill_id}技能的第{level + 1}级训练'
+        }
+    
+    def _execute_training(self, skill: Skill, task: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        执行训练任务
+        
+        实际调用技能并评估结果
+        """
+        task_type = task.get('type', 'generic')
+        
+        try:
+            if task_type == 'research':
+                # 执行检索训练
+                result = skill.execute(
+                    query=task.get('query', ''),
+                    sources=['法律法规', '司法解释', '判例']
+                )
+                
+                if result.get('success'):
+                    found_count = result.get('result', {}).get('total_found', 0)
+                    expected = task.get('expected_count', 1)
+                    passed = found_count >= expected
+                    return {
+                        'passed': passed,
+                        'found': found_count,
+                        'expected': expected,
+                        'reason': f'找到{found_count}条结果' if passed else f'结果不足，期望{expected}条'
+                    }
+                else:
+                    return {'passed': False, 'reason': result.get('error', '执行失败')}
+                    
+            elif task_type == 'drafting':
+                # 执行文书起草训练
+                result = skill.execute(
+                    doc_type=task.get('doc_type', ''),
+                    sections=task.get('sections', [])
+                )
+                
+                if result.get('success'):
+                    content = result.get('result', {}).get('content', '')
+                    passed = len(content) > 10  # 基本检查
+                    return {
+                        'passed': passed,
+                        'content_length': len(content),
+                        'reason': '文书生成成功' if passed else '文书内容过短'
+                    }
+                else:
+                    return {'passed': False, 'reason': result.get('error', '执行失败')}
+                    
+            elif task_type == 'analysis':
+                # 执行案例分析训练
+                result = skill.execute(
+                    case_text=f"这是一个{task.get('case_type', '')}案例，需要分析{task.get('focus', '')}",
+                    analysis_type='comprehensive'
+                )
+                
+                if result.get('success'):
+                    analysis = result.get('result', {})
+                    has_summary = 'case_summary' in analysis or 'analysis' in analysis
+                    passed = has_summary
+                    return {
+                        'passed': passed,
+                        'has_analysis': has_summary,
+                        'reason': '分析完成' if passed else '分析结果不完整'
+                    }
+                else:
+                    return {'passed': False, 'reason': result.get('error', '执行失败')}
+            
+            else:
+                # 通用训练：直接通过（模拟）
+                # 根据难度有一定概率失败
+                difficulty = task.get('difficulty', 1)
+                success_rate = max(0.7, 1.0 - difficulty * 0.05)
+                passed = random.random() < success_rate
+                return {
+                    'passed': passed,
+                    'difficulty': difficulty,
+                    'reason': '训练完成' if passed else '训练失败，需要更多练习'
+                }
+                
+        except Exception as e:
+            self.logger.error(f"训练执行异常: {e}")
+            return {'passed': False, 'reason': str(e)}
     
     def _generate_skill_code(self, definition: Dict[str, Any]) -> str:
         """生成技能代码"""

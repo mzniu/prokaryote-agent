@@ -484,19 +484,33 @@ class SimpleEvolutionAgent:
             if not self._train_skill_unlock(skill):
                 return False
         
-        self.logger.info(f"   正在升级技能...")
+        self.logger.info(f"   开始训练...")
         
-        # 调用技能生成器升级技能
+        # 调用技能生成器升级技能（包含训练任务）
         result = self.skill_generator.upgrade_skill(skill_id, target_level)
         
         if result['success']:
+            # 显示训练任务
+            training_task = result.get('training_task', '')
+            if training_task:
+                self.logger.info(f"   ✓ 训练任务: {training_task}")
+            
+            # 显示训练结果
+            training_result = result.get('training_result', {})
+            if training_result.get('reason'):
+                self.logger.info(f"   ✓ {training_result['reason']}")
+            
+            # 显示增强
             enhancements = result.get('enhancements', [])
-            if enhancements:
-                for enhancement in enhancements:
-                    self.logger.info(f"   ✓ {enhancement}")
+            for enhancement in enhancements:
+                self.logger.info(f"   ★ {enhancement}")
             return True
         else:
-            self.logger.error(f"   ✗ 技能升级失败: {result.get('error')}")
+            # 训练失败
+            self.logger.warning(f"   ✗ {result.get('error')}")
+            training_task = result.get('training_task', '')
+            if training_task:
+                self.logger.info(f"   需要重新练习: {training_task}")
             return False
     
     def _extract_capabilities(self, skill: Dict) -> List[str]:
