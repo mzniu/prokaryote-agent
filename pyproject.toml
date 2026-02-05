@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prokaryote-agent"
+version = "0.2.1"
+description = "Prokaryote Agent - 代际进化系统的核心组件"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "Prokaryote Team"}
+]
+keywords = ["agent", "evolution", "prokaryote"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[project.scripts]
+prokaryote-daemon = "daemon:main"
+
+[tool.setuptools]
+packages = ["prokaryote_agent", "prokaryote_agent.core", "prokaryote_agent.daemon", "prokaryote_agent.specialization"]
+package-dir = {"" = "."}
+
+[tool.setuptools.package-data]
+prokaryote_agent = ["*.json"]
