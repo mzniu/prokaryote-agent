@@ -135,14 +135,37 @@ class EvolutionStrategy:
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[:count]
     
-    def adjust_strategy_based_on_tree(self) -> str:
-        """根据技能树状态调整策略"""
+    def adjust_strategy_based_on_tree(self) -> Dict:
+        """根据技能树状态调整策略，返回包含建议的字典"""
         is_specialist, category = self.scorer.is_specialist()
+        breadth = self.scorer.get_specialization_breadth()
+        
+        reasoning = []
+        focus_breadth = False
+        focus_leveling = False
+        continue_specialization = False
+        suggested_goal_type = "unlock"
         
         if is_specialist:
-            return "specialist"
+            reasoning.append(f"已专精于{category}类别")
+            continue_specialization = True
+            suggested_goal_type = "specialize"
+        elif breadth < 2:
+            reasoning.append("技能广度较窄，建议探索新类别")
+            focus_breadth = True
+            suggested_goal_type = "unlock"
+        else:
+            reasoning.append("技能分布较均衡，建议深度发展")
+            focus_leveling = True
+            suggested_goal_type = "level_up"
         
-        breadth = self.scorer.get_specialization_breadth()
+        return {
+            "focus_breadth": focus_breadth,
+            "focus_leveling": focus_leveling,
+            "continue_specialization": continue_specialization,
+            "suggested_goal_type": suggested_goal_type,
+            "reasoning": reasoning
+        }
         if breadth < 2:
             return "explorer"
         
@@ -251,12 +274,14 @@ class EvolutionStrategy:
         elif goal_type == "specialize":
             specializations = self.scorer.identify_specialization_direction()
             if specializations:
+                category, score = specializations[0]
                 return {
                     "type": "specialize",
-                    "target_category": specializations[0],
+                    "target_category": category,
+                    "description": f"Focus on {category} specialization",
                     "priority": 0.6
                 }
-            return {"type": "specialize", "target_category": None}
+            return {"type": "specialize", "target_category": None, "description": "No specialization target"}
         
         return {"type": goal_type, "priority": 0.5}
     
