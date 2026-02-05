@@ -469,16 +469,32 @@ class SkillGenerator:
     
     def _generate_legal_skill_code(self, skill_id: str, skill_name: str, 
                                     capabilities: List[str]) -> tuple:
-        """生成法律领域技能代码 - 使用真实网络搜索"""
+        """生成法律领域技能代码 - 使用真实网络搜索 + 知识库存储"""
         
         if 'research' in skill_id or '检索' in skill_name:
             execute_code = '''
             from prokaryote_agent.skills.web_tools import search_legal, web_search
+            from prokaryote_agent.knowledge import store_knowledge, search_knowledge
             
             query = kwargs.get('query', '')
             sources = kwargs.get('sources', ['法律法规', '司法解释', '判例'])
+            use_cache = kwargs.get('use_cache', True)
             
-            # 使用真实网络搜索法律资料
+            # 1. 先查本地知识库
+            if use_cache:
+                local_results = search_knowledge(query, domain="legal", limit=5)
+                if len(local_results) >= 3:
+                    result = {
+                        'query': query,
+                        'sources': sources,
+                        'results': [{'title': r['title'], 'source': 'knowledge_base', 
+                                    'snippet': r.get('snippet', '')} for r in local_results],
+                        'total_found': len(local_results),
+                        'from_cache': True
+                    }
+                    return {'success': True, 'result': result}
+            
+            # 2. 本地知识不足，联网搜索
             all_results = []
             
             # 根据 sources 决定搜索类别
@@ -503,11 +519,24 @@ class SkillGenerator:
             if not all_results:
                 all_results = web_search(f"{query} 法律", max_results=5)
             
+            # 3. 存储搜索结果到知识库
+            for r in all_results[:5]:  # 只存储前5条
+                store_knowledge(
+                    title=r.get('title', query),
+                    content=r.get('snippet', r.get('title', '')),
+                    domain="legal",
+                    category=categories[0] if categories else "general",
+                    source_url=r.get('url', ''),
+                    acquired_by=self.metadata.skill_id
+                )
+            
             result = {
                 'query': query,
                 'sources': sources,
                 'results': all_results,
-                'total_found': len(all_results)
+                'total_found': len(all_results),
+                'from_cache': False,
+                'stored_to_kb': min(len(all_results), 5)
             }'''
             validate_code = '''
         query = kwargs.get('query')
@@ -516,9 +545,12 @@ class SkillGenerator:
         Args:
             query: 检索关键词
             sources: 检索源列表 ['法律法规', '司法解释', '判例']
+            use_cache: 是否优先使用本地知识库 (默认True)
         
         Returns:
-            检索结果，包含标题、URL、来源等'''
+            检索结果，包含标题、URL、来源等
+            from_cache: 是否来自知识库
+            stored_to_kb: 新存储到知识库的数量'''
         
         elif 'drafting' in skill_id or '文书' in skill_name or '起草' in skill_name:
             execute_code = '''
@@ -728,24 +760,57 @@ class SkillGenerator:
         elif 'debug' in skill_id or '调试' in skill_name:
             execute_code = '''
             from prokaryote_agent.skills.web_tools import web_search
+            from prokaryote_agent.knowledge import store_knowledge, search_knowledge
             
             error_message = kwargs.get('error', '')
             code_context = kwargs.get('code', '')
             language = kwargs.get('language', 'python')
+            use_cache = kwargs.get('use_cache', True)
             
-            # 搜索错误解决方案
+            # 1. 先查本地知识库
+            if use_cache and error_message:
+                # 提取错误类型作为搜索词
+                error_type = error_message.split(':')[0] if ':' in error_message else error_message[:30]
+                local_results = search_knowledge(error_type, domain="software_dev", limit=3)
+                if local_results:
+                    result = {
+                        'error': error_message,
+                        'language': language,
+                        'possible_solutions': [{'title': r['title'], 'source': 'knowledge_base',
+                                              'snippet': r.get('snippet', '')} for r in local_results],
+                        'stackoverflow_refs': [],
+                        'analysis': f'从知识库找到 {len(local_results)} 个相关解决方案',
+                        'from_cache': True
+                    }
+                    return {'success': True, 'result': result}
+            
+            # 2. 联网搜索
             search_query = f"{language} {error_message[:100]}"
             solutions = web_search(search_query, max_results=5)
             
             # 也搜索 Stack Overflow
             so_results = web_search(f"site:stackoverflow.com {error_message[:80]}", max_results=3)
             
+            # 3. 存储有用的解决方案到知识库
+            all_solutions = solutions + so_results
+            for s in all_solutions[:3]:
+                store_knowledge(
+                    title=s.get('title', error_message[:50]),
+                    content=s.get('snippet', '') or f"错误: {error_message}\\n解决方案链接: {s.get('url', '')}",
+                    domain="software_dev",
+                    category="errors",
+                    source_url=s.get('url', ''),
+                    acquired_by=self.metadata.skill_id
+                )
+            
             result = {
                 'error': error_message,
                 'language': language,
                 'possible_solutions': solutions,
                 'stackoverflow_refs': so_results,
-                'analysis': f'搜索到 {len(solutions)} 个可能的解决方案'
+                'analysis': f'搜索到 {len(solutions)} 个可能的解决方案',
+                'from_cache': False,
+                'stored_to_kb': min(len(all_solutions), 3)
             }'''
             validate_code = '''
         error = kwargs.get('error')
@@ -755,6 +820,7 @@ class SkillGenerator:
             error: 错误信息
             code: 相关代码上下文（可选）
             language: 编程语言
+            use_cache: 是否优先使用本地知识库 (默认True)
         
         Returns:
             调试建议和网络搜索到的解决方案'''
