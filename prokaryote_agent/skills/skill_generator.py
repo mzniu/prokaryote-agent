@@ -469,23 +469,45 @@ class SkillGenerator:
     
     def _generate_legal_skill_code(self, skill_id: str, skill_name: str, 
                                     capabilities: List[str]) -> tuple:
-        """生成法律领域技能代码"""
+        """生成法律领域技能代码 - 使用真实网络搜索"""
         
         if 'research' in skill_id or '检索' in skill_name:
             execute_code = '''
+            from prokaryote_agent.skills.web_tools import search_legal, web_search
+            
             query = kwargs.get('query', '')
             sources = kwargs.get('sources', ['法律法规', '司法解释', '判例'])
             
-            # TODO: 接入实际的法律数据库API
-            # 目前返回模拟结果
+            # 使用真实网络搜索法律资料
+            all_results = []
+            
+            # 根据 sources 决定搜索类别
+            categories = []
+            for src in sources:
+                if '法规' in src or '法律' in src:
+                    categories.append('laws')
+                if '解释' in src:
+                    categories.append('interpretations')
+                if '判例' in src or '案例' in src:
+                    categories.append('cases')
+            
+            if not categories:
+                categories = ['all']
+            
+            # 执行搜索
+            for category in set(categories):
+                results = search_legal(query, category)
+                all_results.extend(results)
+            
+            # 如果法律专业搜索没结果，用通用搜索
+            if not all_results:
+                all_results = web_search(f"{query} 法律", max_results=5)
+            
             result = {
                 'query': query,
                 'sources': sources,
-                'results': [
-                    {'title': f'相关法条: {query}', 'relevance': 0.9},
-                    {'title': f'相关判例: {query}', 'relevance': 0.8}
-                ],
-                'total_found': 2
+                'results': all_results,
+                'total_found': len(all_results)
             }'''
             validate_code = '''
         query = kwargs.get('query')
@@ -493,49 +515,104 @@ class SkillGenerator:
             docstring = '''
         Args:
             query: 检索关键词
-            sources: 检索源列表
+            sources: 检索源列表 ['法律法规', '司法解释', '判例']
         
         Returns:
-            检索结果'''
+            检索结果，包含标题、URL、来源等'''
         
         elif 'drafting' in skill_id or '文书' in skill_name or '起草' in skill_name:
             execute_code = '''
+            from prokaryote_agent.skills.web_tools import web_search, fetch_webpage
+            
             doc_type = kwargs.get('doc_type', '合同')
             template = kwargs.get('template', None)
             data = kwargs.get('data', {})
             
-            # TODO: 接入实际的文书生成逻辑
+            # 搜索相关模板和范例
+            search_results = web_search(f"{doc_type} 模板 范本", max_results=3)
+            
+            # 提取参考信息
+            references = []
+            for r in search_results[:2]:
+                references.append({
+                    'title': r.get('title', ''),
+                    'url': r.get('url', '')
+                })
+            
+            # 生成文书框架（基于搜索到的模板参考）
+            sections = self._get_document_sections(doc_type)
+            
             result = {
                 'doc_type': doc_type,
-                'content': f'【{doc_type}草稿】\\n根据提供的信息生成...',
-                'sections': ['标题', '正文', '签章'],
-                'warnings': []
-            }'''
+                'content': f'【{doc_type}】\\n\\n' + '\\n'.join(f'{i+1}. {s}' for i, s in enumerate(sections)),
+                'sections': sections,
+                'references': references,
+                'warnings': ['请根据实际情况修改内容', '建议咨询专业律师审核']
+            }
+            
+    def _get_document_sections(self, doc_type):
+        """获取文书章节"""
+        templates = {
+            '劳动合同': ['合同双方', '工作内容', '工作时间', '劳动报酬', '社会保险', '劳动保护', '合同期限', '违约责任', '争议解决'],
+            '保密协议': ['保密内容范围', '保密期限', '保密义务', '违约责任', '例外情况'],
+            '租赁合同': ['租赁物描述', '租赁期限', '租金及支付', '押金', '维修责任', '违约责任'],
+            'NDA': ['保密信息定义', '保密义务', '使用限制', '期限', '违约救济'],
+        }
+        return templates.get(doc_type, ['标题', '正文', '签章'])'''
             validate_code = '''
         doc_type = kwargs.get('doc_type')
         return doc_type is not None'''
             docstring = '''
         Args:
-            doc_type: 文书类型
+            doc_type: 文书类型（劳动合同、保密协议等）
             template: 模板（可选）
             data: 填充数据
         
         Returns:
-            生成的文书内容'''
+            文书内容和参考资料'''
         
         elif 'analysis' in skill_id or '分析' in skill_name:
             execute_code = '''
+            from prokaryote_agent.skills.web_tools import web_search, search_wikipedia
+            
             case_text = kwargs.get('case_text', '')
             analysis_type = kwargs.get('analysis_type', 'comprehensive')
             
-            # TODO: 接入实际的案例分析逻辑
+            # 提取关键词进行搜索
+            keywords = self._extract_keywords(case_text)
+            
+            # 搜索相关法律知识
+            legal_context = []
+            for kw in keywords[:3]:
+                results = web_search(f"{kw} 法律 规定", max_results=2)
+                legal_context.extend(results)
+            
+            # 搜索相关概念解释
+            wiki_results = []
+            for kw in keywords[:2]:
+                wiki = search_wikipedia(kw)
+                wiki_results.extend(wiki)
+            
             result = {
-                'case_summary': '案例摘要...',
-                'key_facts': ['事实1', '事实2'],
-                'legal_issues': ['争议焦点1'],
-                'applicable_laws': ['相关法条'],
-                'analysis': '分析结论...'
-            }'''
+                'case_summary': case_text[:200] + '...' if len(case_text) > 200 else case_text,
+                'key_facts': keywords,
+                'legal_issues': [f'{kw}相关法律问题' for kw in keywords[:3]],
+                'applicable_laws': legal_context,
+                'references': wiki_results,
+                'analysis': f'案例涉及{", ".join(keywords[:3])}等法律问题，需结合相关法规分析。'
+            }
+            
+    def _extract_keywords(self, text):
+        """提取关键词"""
+        import re
+        # 简单的关键词提取
+        legal_terms = ['合同', '侵权', '违约', '赔偿', '责任', '权益', '纠纷', '诉讼', '解除', '争议']
+        found = [t for t in legal_terms if t in text]
+        if not found:
+            # 提取名词性词汇（简化处理）
+            words = re.findall(r'[\\u4e00-\\u9fa5]{2,4}', text)
+            found = list(set(words))[:5]
+        return found'''
             validate_code = '''
         case_text = kwargs.get('case_text')
         return case_text is not None and len(case_text.strip()) > 0'''
@@ -545,22 +622,42 @@ class SkillGenerator:
             analysis_type: 分析类型
         
         Returns:
-            案例分析结果'''
+            案例分析结果，包含相关法律参考'''
         
         elif 'contract' in skill_id or '合同' in skill_name:
             execute_code = '''
+            from prokaryote_agent.skills.web_tools import web_search
+            
             contract_text = kwargs.get('contract_text', '')
             check_items = kwargs.get('check_items', ['条款完整性', '风险点', '合规性'])
             
-            # TODO: 接入实际的合同审查逻辑
+            # 搜索合同审查要点
+            review_points = web_search("合同审查要点 风险点", max_results=3)
+            
+            # 分析合同（简化版本）
+            issues = []
+            suggestions = []
+            
+            # 检查常见问题
+            if '违约' not in contract_text:
+                issues.append({'type': '缺失条款', 'description': '未发现违约责任条款'})
+                suggestions.append('建议增加违约责任条款')
+            
+            if '争议' not in contract_text and '仲裁' not in contract_text:
+                issues.append({'type': '缺失条款', 'description': '未发现争议解决条款'})
+                suggestions.append('建议增加争议解决方式条款')
+            
+            # 搜索相关法规参考
+            legal_refs = web_search("合同法 必备条款", max_results=2)
+            
             result = {
-                'overall_rating': 'B',
-                'risk_level': '中等',
-                'issues': [
-                    {'type': '风险点', 'location': '第3条', 'description': '违约责任条款模糊'},
-                ],
-                'suggestions': ['建议明确违约责任'],
-                'checked_items': check_items
+                'overall_rating': 'B' if len(issues) <= 2 else 'C',
+                'risk_level': '低' if len(issues) == 0 else '中等' if len(issues) <= 2 else '高',
+                'issues': issues,
+                'suggestions': suggestions,
+                'checked_items': check_items,
+                'legal_references': legal_refs,
+                'review_guide': review_points
             }'''
             validate_code = '''
         contract_text = kwargs.get('contract_text')
@@ -571,7 +668,7 @@ class SkillGenerator:
             check_items: 检查项目
         
         Returns:
-            合同审查结果'''
+            合同审查结果，包含风险评估和改进建议'''
         
         else:
             # 通用法律技能
@@ -581,19 +678,41 @@ class SkillGenerator:
     
     def _generate_software_skill_code(self, skill_id: str, skill_name: str,
                                        capabilities: List[str]) -> tuple:
-        """生成软件开发领域技能代码"""
+        """生成软件开发领域技能代码 - 使用真实网络搜索"""
         
         if 'code_review' in skill_id or '代码审查' in skill_name:
             execute_code = '''
+            from prokaryote_agent.skills.web_tools import web_search
+            
             code = kwargs.get('code', '')
             language = kwargs.get('language', 'python')
             
-            # TODO: 接入实际的代码审查逻辑
+            # 搜索代码审查最佳实践
+            best_practices = web_search(f"{language} code review best practices", max_results=3)
+            
+            # 基本代码检查
+            issues = []
+            suggestions = []
+            
+            lines = code.split('\\n')
+            for i, line in enumerate(lines, 1):
+                # 检查行长度
+                if len(line) > 120:
+                    issues.append({'line': i, 'type': 'style', 'message': '行长度超过120字符'})
+                # 检查 TODO 注释
+                if 'TODO' in line or 'FIXME' in line:
+                    issues.append({'line': i, 'type': 'todo', 'message': f'发现待处理标记: {line.strip()}'})
+            
+            # 计算质量分
+            quality_score = max(0.5, 1.0 - len(issues) * 0.1)
+            
             result = {
                 'language': language,
-                'issues': [],
-                'suggestions': [],
-                'quality_score': 0.8
+                'issues': issues,
+                'suggestions': suggestions,
+                'quality_score': quality_score,
+                'best_practices_refs': best_practices,
+                'lines_analyzed': len(lines)
             }'''
             validate_code = '''
         code = kwargs.get('code')
@@ -604,7 +723,105 @@ class SkillGenerator:
             language: 编程语言
         
         Returns:
-            代码审查结果'''
+            代码审查结果，包含问题列表和最佳实践参考'''
+        
+        elif 'debug' in skill_id or '调试' in skill_name:
+            execute_code = '''
+            from prokaryote_agent.skills.web_tools import web_search
+            
+            error_message = kwargs.get('error', '')
+            code_context = kwargs.get('code', '')
+            language = kwargs.get('language', 'python')
+            
+            # 搜索错误解决方案
+            search_query = f"{language} {error_message[:100]}"
+            solutions = web_search(search_query, max_results=5)
+            
+            # 也搜索 Stack Overflow
+            so_results = web_search(f"site:stackoverflow.com {error_message[:80]}", max_results=3)
+            
+            result = {
+                'error': error_message,
+                'language': language,
+                'possible_solutions': solutions,
+                'stackoverflow_refs': so_results,
+                'analysis': f'搜索到 {len(solutions)} 个可能的解决方案'
+            }'''
+            validate_code = '''
+        error = kwargs.get('error')
+        return error is not None and len(error.strip()) > 0'''
+            docstring = '''
+        Args:
+            error: 错误信息
+            code: 相关代码上下文（可选）
+            language: 编程语言
+        
+        Returns:
+            调试建议和网络搜索到的解决方案'''
+        
+        elif 'api' in skill_id or 'API' in skill_name:
+            execute_code = '''
+            from prokaryote_agent.skills.web_tools import web_search, fetch_webpage
+            
+            api_name = kwargs.get('api_name', '')
+            operation = kwargs.get('operation', 'usage')  # usage, example, docs
+            
+            # 搜索 API 文档和示例
+            doc_results = web_search(f"{api_name} API documentation", max_results=3)
+            example_results = web_search(f"{api_name} API example code", max_results=3)
+            
+            result = {
+                'api_name': api_name,
+                'operation': operation,
+                'documentation': doc_results,
+                'examples': example_results,
+                'summary': f'找到 {len(doc_results)} 个文档链接和 {len(example_results)} 个示例'
+            }'''
+            validate_code = '''
+        api_name = kwargs.get('api_name')
+        return api_name is not None and len(api_name.strip()) > 0'''
+            docstring = '''
+        Args:
+            api_name: API 名称
+            operation: 操作类型（usage/example/docs）
+        
+        Returns:
+            API 文档和示例链接'''
+        
+        elif 'learn' in skill_id or '学习' in skill_name:
+            execute_code = '''
+            from prokaryote_agent.skills.web_tools import web_search, search_wikipedia
+            
+            topic = kwargs.get('topic', '')
+            level = kwargs.get('level', 'beginner')  # beginner, intermediate, advanced
+            
+            # 搜索教程和学习资源
+            tutorial_results = web_search(f"{topic} tutorial {level}", max_results=5)
+            
+            # 搜索概念解释
+            wiki_results = search_wikipedia(topic)
+            
+            # 搜索官方文档
+            doc_results = web_search(f"{topic} official documentation", max_results=2)
+            
+            result = {
+                'topic': topic,
+                'level': level,
+                'tutorials': tutorial_results,
+                'concepts': wiki_results,
+                'official_docs': doc_results,
+                'learning_path': f'建议从 {level} 级别开始学习 {topic}'
+            }'''
+            validate_code = '''
+        topic = kwargs.get('topic')
+        return topic is not None and len(topic.strip()) > 0'''
+            docstring = '''
+        Args:
+            topic: 学习主题
+            level: 难度级别（beginner/intermediate/advanced）
+        
+        Returns:
+            学习资源链接和教程'''
         
         else:
             return self._generate_generic_skill_code(skill_id, skill_name, capabilities)
@@ -613,17 +830,30 @@ class SkillGenerator:
     
     def _generate_generic_skill_code(self, skill_id: str, skill_name: str,
                                       capabilities: List[str]) -> tuple:
-        """生成通用技能代码"""
+        """生成通用技能代码 - 使用网络搜索作为基础能力"""
         
         execute_code = '''
-            # 技能执行逻辑
-            # TODO: 实现具体功能
+            from prokaryote_agent.skills.web_tools import web_search, search_wikipedia
+            
+            # 获取输入
             input_data = kwargs.get('input', {})
+            query = kwargs.get('query', '')
+            
+            # 如果有查询，执行网络搜索
+            search_results = []
+            wiki_results = []
+            
+            if query:
+                search_results = web_search(query, max_results=5)
+                wiki_results = search_wikipedia(query)
             
             result = {
                 'skill': "''' + skill_name + '''",
                 'input': input_data,
-                'output': '执行完成',
+                'query': query,
+                'search_results': search_results,
+                'wiki_results': wiki_results,
+                'output': '执行完成' if search_results or wiki_results else '未找到相关信息',
                 'capabilities_used': ''' + repr(capabilities) + '''
             }'''
         
@@ -634,9 +864,10 @@ class SkillGenerator:
         docstring = '''
         Args:
             input: 输入数据
+            query: 搜索查询（可选）
         
         Returns:
-            执行结果'''
+            执行结果，包含网络搜索结果'''
         
         return execute_code, validate_code, docstring
     
