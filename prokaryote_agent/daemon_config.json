@@ -1,0 +1,112 @@
+{
+  "version": "1.0.0",
+  "description": "代际进化系统守护进程配置",
+  
+  "restart_trigger": {
+    "type": "evolution_count",
+    "threshold": 10,
+    "description": "每10次成功进化触发重启，创建新代"
+  },
+  
+  "generation_management": {
+    "max_generations_to_keep": 100,
+    "snapshot_interval": 10,
+    "compress_old_generations": true,
+    "incremental_snapshots": true,
+    "generations_dir": "./generations",
+    "lineage_file": "./generations/lineage.json",
+    "description": "代际数据管理策略"
+  },
+  
+  "genetic_transmission": {
+    "fitness_threshold_keep": 0.8,
+    "fitness_threshold_eliminate": 0.5,
+    "usage_threshold_keep": 50,
+    "usage_threshold_eliminate": 10,
+    "mutation_selection_rate": 0.3,
+    "description": "遗传信息传递规则：高适应度保留，低适应度淘汰，中等有概率变异"
+  },
+  
+  "mutation": {
+    "enabled": true,
+    "rates": {
+      "parameter_tuning": 0.40,
+      "new_goal_injection": 0.20,
+      "strategy_adjustment": 0.15,
+      "capability_combination": 0.15,
+      "random_innovation": 0.10
+    },
+    "parameter_variation_range": 0.10,
+    "description": "变异机制配置：参数微调40%，新目标注入20%，策略调整15%，能力组合15%，随机创新10%"
+  },
+  
+  "specialization": {
+    "default_domain": "software_development",
+    "skill_tree_file": "specialization/domains/software_dev_tree.json",
+    "skill_tree_path": "./prokaryote_agent/specialization/domains/software_dev_tree.json",
+    "evolution_strategy": "balanced",
+    "auto_inject_goals": true,
+    "readiness_threshold": 0.7,
+    "allow_domain_switch": false,
+    "skill_upgrade_enabled": true,
+    "description": "专业化进化配置，默认软件开发领域"
+  },
+  
+  "monitoring": {
+    "health_check_interval": 30,
+    "heartbeat_timeout": 120,
+    "auto_restart_on_crash": true,
+    "max_restart_attempts": 3,
+    "restart_cooldown": 60,
+    "description": "Agent健康监控配置"
+  },
+  
+  "communication": {
+    "protocol": "socket",
+    "socket_path": "./prokaryote_agent/daemon.sock",
+    "heartbeat_interval": 30,
+    "restart_timeout": 60,
+    "description": "进程间通信配置"
+  },
+  
+  "logging": {
+    "level": "INFO",
+    "file": "./prokaryote_agent/log/daemon.log",
+    "max_size_mb": 50,
+    "backup_count": 5,
+    "description": "日志配置"
+  },
+  
+  "performance": {
+    "lazy_loading": true,
+    "cache_enabled": true,
+    "parallel_evaluation": false,
+    "description": "性能优化配置"
+  },
+  
+  "recovery": {
+    "auto_rollback_on_failure": true,
+    "verification_after_restart": true,
+    "max_consecutive_failures": 3,
+    "description": "故障恢复配置"
+  },
+  
+  "collaboration": {
+    "enabled": false,
+    "team_discovery": false,
+    "capability_sharing": false,
+    "description": "多Agent协作配置（当前禁用）"
+  },
+  
+  "agent_parameters": {
+    "max_capabilities": 100,
+    "evolution_timeout": 300,
+    "description": "Agent启动参数"
+  },
+  
+  "experimental": {
+    "cross_domain_learning": false,
+    "rlhf_integration": false,
+    "description": "实验性功能（默认关闭）"
+  }
+}

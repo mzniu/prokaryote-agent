@@ -1,20 +1,55 @@
 {
+  "version": "1.0.0",
+  "description": "代际进化族谱树 - 记录所有进化分支和代际关系",
+  "created_at": "2026-02-05T00:00:00",
+  "last_updated": "2026-02-05T23:00:00",
+  
   "lineages": {
     "main": {
       "branch_id": "main",
-      "description": "主进化分支",
-      "generations": [
-        0
-      ],
-      "current_generation": 0,
-      "specialization": "general"
+      "description": "主进化分支 - 向软件开发专家方向进化",
+      "created_at": "2026-02-05T00:00:00",
+      "parent_generation": null,
+      "parent_lineage": null,
+      "generations": [0, 1],
+      "current_generation": 1,
+      "specialization": "software_development",
+      "status": "active"
     }
   },
+  
   "generation_graph": {
     "0": {
+      "generation_id": 0,
       "parent": null,
+      "children": [1],
+      "lineage": "main",
+      "created_at": "2026-02-05T00:00:00",
+      "evolution_count": 0,
+      "status": "archived"
+    },
+    "1": {
+      "generation_id": 1,
+      "parent": 0,
       "children": [],
-      "lineage": "main"
+      "lineage": "main",
+      "created_at": "2026-02-05T23:00:00",
+      "evolution_count": 0,
+      "specialization_score": 0,
+      "status": "current"
     }
+  },
+  
+  "active_lineage": "main",
+  "current_generation": 1,
+  "total_generations": 2,
+  "total_lineages": 1,
+  
+  "statistics": {
+    "total_evolutions": 0,
+    "successful_evolutions": 0,
+    "failed_evolutions": 0,
+    "rollbacks": 0,
+    "branches_created": 0
   }
 }

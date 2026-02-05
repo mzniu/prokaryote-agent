@@ -543,7 +543,7 @@ class DaemonCLI:
                 for tier in SkillTier:
                     tier_skills = tree.get_skills_by_tier(tier)
                     tier_unlocked = [s for s in tier_skills if s.is_unlocked()]
-                    print(f"  {tier.value.capitalize()}: {len(tier_unlocked)}/{len(tier_skills)}")
+                    print(f"  {tier.name.capitalize()}: {len(tier_unlocked)}/{len(tier_skills)}")
             
             elif args.format == 'detailed':
                 print(f"Skills ({len(tree)} total):\n")
@@ -552,7 +552,7 @@ class DaemonCLI:
                     status = "🟢" if skill.is_unlocked() else "🔒"
                     level_str = f"L{skill.level}" if skill.is_unlocked() else "---"
                     
-                    print(f"{status} {skill.name:30s} {level_str:5s} [{skill.tier.value}]")
+                    print(f"{status} {skill.name:30s} {level_str:5s} [{skill.tier.name}]")
                     if skill.is_unlocked() and skill.proficiency > 0:
                         bar_length = 20
                         filled = int(skill.proficiency * bar_length)
@@ -574,7 +574,7 @@ class DaemonCLI:
                 if available:
                     print(f"\n🎯 Ready to Unlock ({len(available)}):")
                     for skill in available[:5]:
-                        print(f"  → {skill.name} [{skill.tier.value}]")
+                        print(f"  → {skill.name} [{skill.tier.name}]")
             
             print("=" * 50)
             return 0
