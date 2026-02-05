@@ -115,12 +115,15 @@ class SkillLevelSystem:
                 "current_level": 5,
                 "max_level": True,
                 "proficiency": skill.proficiency,
-                "progress": 1.0
+                "required": 1.0,
+                "percentage": 100.0,
+                "next_level": 5
             }
         
         return {
             "current_level": skill.level,
             "proficiency": skill.proficiency,
-            "progress": skill.proficiency,
-            "remaining": 1.0 - skill.proficiency
+            "required": 1.0,  # 每级需要1.0熟练度
+            "percentage": skill.proficiency * 100,
+            "next_level": skill.level + 1
         }

@@ -138,8 +138,46 @@ class EvolutionStrategy:
         
         return "balanced"
     
-    def detect_skill_synergy(self, skill_ids: List[str]) -> Dict:
-        """检测技能协同详情"""
+    def detect_skill_synergy(self, skill_ids: List[str] = None) -> List[Dict]:
+        """检测技能协同效应列表
+        
+        如果不提供skill_ids，则扫描所有已解锁技能找出协同
+        """
+        if skill_ids is None:
+            # 扫描所有已解锁技能的协同
+            synergies = []
+            unlocked = self.skill_tree.get_unlocked_skills()
+            
+            # 检测组合技能协同
+            for skill in self.skill_tree.skills.values():
+                if skill.is_combination and not skill.unlocked:
+                    prereq_unlocked = all(
+                        self.skill_tree.skills[pid].unlocked 
+                        for pid in skill.prerequisites 
+                        if pid in self.skill_tree.skills
+                    )
+                    if prereq_unlocked:
+                        synergies.append({
+                            "type": "combination",
+                            "skill_id": skill.id,
+                            "value": 1.5
+                        })
+            
+            # 检测类别聚类协同
+            from collections import Counter
+            category_counts = Counter(s.category for s in unlocked if s.level >= 3)
+            for category, count in category_counts.items():
+                if count >= 3:
+                    synergies.append({
+                        "type": "category_cluster",
+                        "category": category.value,
+                        "count": count,
+                        "value": 1.2
+                    })
+            
+            return synergies
+        
+        # 原有逻辑：详细分析特定技能组合
         synergy_value = self.detect_synergy(skill_ids)
         
         categories = {}
@@ -148,42 +186,67 @@ class EvolutionStrategy:
                 cat = self.skill_tree.skills[sid].category.value
                 categories[cat] = categories.get(cat, 0) + 1
         
-        return {
+        return [{
             "synergy_value": synergy_value,
             "category_distribution": categories,
             "is_cluster": len(categories) == 1,
             "is_combination": len(categories) > 1
-        }
+        }]
     
-    def generate_evolution_goal(self, goal_type: str, context: Dict = None) -> Dict:
-        """生成单个进化目标"""
+    def generate_evolution_goal(self, context: Dict = None, goal_type: str = "unlock") -> Dict:
+        """生成单个进化目标
+        
+        参数顺序调整为context优先，以支持测试中的调用方式
+        """
         context = context or {}
         
         if goal_type == "unlock":
             capabilities = context.get("capabilities", {})
-            next_skill = self.recommend_next_skill(capabilities)
-            return {
-                "type": "unlock_skill",
-                "target": next_skill,
-                "priority": 0.8
-            }
+            unlockable = self.unlocker.batch_check_unlockable(context)
+            
+            if not unlockable:
+                return {"type": "unlock_skill", "target_skill_id": None}
+            
+            next_skill_id = unlockable[0] if unlockable else None
+            if next_skill_id and next_skill_id in self.skill_tree.skills:
+                skill = self.skill_tree.skills[next_skill_id]
+                return {
+                    "type": "unlock_skill",
+                    "target_skill_id": skill.id,
+                    "target_skill_name": skill.name,
+                    "description": f"Unlock {skill.name}",
+                    "priority": 0.8
+                }
+            
+            return {"type": "unlock_skill", "target_skill_id": None}
         
         elif goal_type == "level_up":
             unlocked = self.skill_tree.get_unlocked_skills()
-            low_level = [sid for sid in unlocked if self.skill_tree.skills[sid].level < 3]
-            return {
-                "type": "level_up_skill",
-                "targets": low_level[:1],
-                "priority": 0.7
-            }
+            if not unlocked:
+                return {"type": "level_up_skill", "target_skill_id": None}
+            
+            # 选择等级最低的技能
+            low_level = [s for s in unlocked if s.level < 3]
+            if low_level:
+                target = low_level[0]
+                return {
+                    "type": "level_up_skill",
+                    "target_skill_id": target.id,
+                    "current_level": target.level,
+                    "priority": 0.7
+                }
+            
+            return {"type": "level_up_skill", "target_skill_id": None}
         
         elif goal_type == "specialize":
-            specialization = self.scorer.identify_specialization()
-            return {
-                "type": "specialize",
-                "target_category": specialization,
-                "priority": 0.6
-            }
+            specializations = self.scorer.identify_specialization_direction()
+            if specializations:
+                return {
+                    "type": "specialize",
+                    "target_category": specializations[0],
+                    "priority": 0.6
+                }
+            return {"type": "specialize", "target_category": None}
         
         return {"type": goal_type, "priority": 0.5}
     

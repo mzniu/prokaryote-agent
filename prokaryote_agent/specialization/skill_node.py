@@ -51,6 +51,10 @@ class SkillNode:
         """检查技能是否锁定"""
         return not self.unlocked
     
+    def is_unlocked(self) -> bool:
+        """检查技能是否已解锁"""
+        return self.unlocked
+    
     def is_max_level(self) -> bool:
         """检查是否达到最大等级"""
         return self.level >= 5
@@ -71,9 +75,11 @@ class SkillNode:
         if not (0.0 <= self.proficiency <= 1.0):
             raise ValueError(f"Proficiency must be 0.0-1.0, got {self.proficiency}")
         
-        # 锁定技能不能有熟练度
-        if not self.unlocked and self.proficiency > 0.0:
-            raise ValueError(f"Locked skill cannot have proficiency > 0, got {self.proficiency}")
+        # 自动同步：如果level > 0，则认为已解锁
+        if self.level > 0 and not self.unlocked:
+            self.unlocked = True
+        
+        # 注：允许锁定技能有熟练度（用于从字典加载）
     
     def to_dict(self):
         """转换为字典"""

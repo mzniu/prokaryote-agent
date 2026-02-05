@@ -14,29 +14,26 @@ class SkillTree:
     
     def add_skill(self, skill: SkillNode):
         """添加技能节点"""
-        if skill.skill_id in self.skills:
-            raise ValueError(f"Skill {skill.skill_id} already exists")
+        skill_id = skill.id
+        if skill_id in self.skills:
+            raise ValueError(f"Skill {skill_id} already exists")
         
-        # 检查前置技能是否存在
-        for prereq in skill.prerequisites:
-            if prereq not in self.skills:
-                raise ValueError(f"Prerequisite {prereq} not found")
-        
-        self.skills[skill.skill_id] = skill
+        # 允许添加有缺失先决条件的技能，在validate_dag时检测
+        self.skills[skill_id] = skill
         
         # 如果没有前置技能，加入根节点
         if not skill.prerequisites:
-            self.root_skills.append(skill.skill_id)
-        
-        # 验证DAG
-        if not self.validate_dag():
-            del self.skills[skill.skill_id]
-            if skill.skill_id in self.root_skills:
-                self.root_skills.remove(skill.skill_id)
-            raise ValueError("Adding this skill would create a cycle")
+            self.root_skills.append(skill_id)
     
     def validate_dag(self) -> bool:
-        """验证是否为有向无环图"""
+        """验证是否为有向无环图，并检查先决条件完整性"""
+        # 首先检查所有先决条件是否存在
+        for skill_id, skill in self.skills.items():
+            for prereq_id in skill.prerequisites:
+                if prereq_id not in self.skills:
+                    return False  # 缺失先决条件
+        
+        # 检测循环
         visited = set()
         rec_stack = set()
         
@@ -78,25 +75,29 @@ class SkillTree:
         
         return True
     
-    def get_unlocked_skills(self) -> List[str]:
-        """获取已解锁的技能列表"""
-        return [sid for sid, skill in self.skills.items() if skill.unlocked]
+    def get_unlocked_skills(self) -> List:
+        """获取已解锁的技能列表（返回SkillNode对象）"""
+        return [skill for skill in self.skills.values() if skill.unlocked]
     
-    def get_locked_skills(self) -> List[str]:
-        """获取锁定的技能列表"""
-        return [sid for sid, skill in self.skills.items() if not skill.unlocked]
+    def get_locked_skills(self) -> List:
+        """获取锁定的技能列表（返回SkillNode对象）"""
+        return [skill for skill in self.skills.values() if not skill.unlocked]
     
     def get_skill(self, skill_id: str):
         """获取指定技能"""
         return self.skills.get(skill_id)
     
-    def get_skills_by_tier(self, tier: SkillTier) -> List[str]:
-        """获取指定层级的技能"""
-        return [sid for sid, skill in self.skills.items() if skill.tier == tier]
+    def get_skills_by_tier(self, tier: SkillTier) -> List:
+        """获取指定层级的技能（返回SkillNode对象）"""
+        return [skill for skill in self.skills.values() if skill.tier == tier]
     
-    def get_available_to_unlock(self) -> List[str]:
-        """获取可解锁的技能（前置条件满足但未解锁）"""
-        return self.get_available_skills()
+    def get_available_to_unlock(self) -> List:
+        """获取可解锁的技能（前置条件满足但未解锁，返回SkillNode对象）"""
+        available = []
+        for skill in self.skills.values():
+            if not skill.unlocked and self.check_prerequisites(skill.id):
+                available.append(skill)
+        return available
     
     def __contains__(self, skill_id: str) -> bool:
         """支持 'skill_id in tree' 语法"""

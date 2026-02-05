@@ -60,16 +60,31 @@ class SkillUnlocker:
         unlockable.sort(key=lambda sid: self.skill_tree.skills[sid].tier.value)
         return unlockable[0]
     
-    def unlock_skill(self, skill_id: str, initial_proficiency: float = 0.0) -> bool:
-        """解锁技能"""
+    def unlock_skill(self, skill_id: str, context_or_proficiency=None, initial_proficiency: float = 0.0) -> bool:
+        """解锁技能
+        
+        支持两种调用方式：
+        1. unlock_skill(skill_id, context) - 带条件检查
+        2. unlock_skill(skill_id, initial_proficiency=0.3) - 直接解锁
+        """
         if skill_id not in self.skill_tree.skills:
             return False
+        
+        # 检查是否传入了context（字典）
+        if isinstance(context_or_proficiency, dict):
+            context = context_or_proficiency
+            if not self.can_unlock(skill_id, context):
+                return False
+            initial_proficiency = context.get('initial_proficiency', 0.0)
+        elif isinstance(context_or_proficiency, (int, float)):
+            initial_proficiency = context_or_proficiency
         
         if not self.skill_tree.check_prerequisites(skill_id):
             return False
         
         skill = self.skill_tree.skills[skill_id]
         skill.unlocked = True
+        skill.level = max(1, skill.level)  # 解锁时至少1级
         if initial_proficiency > 0:
             skill.proficiency = min(1.0, initial_proficiency)
         return True
@@ -111,8 +126,21 @@ class SkillUnlocker:
         except:
             return False
     
-    def batch_check_unlockable(self, skill_ids: List[str], capabilities: Dict) -> Dict[str, bool]:
-        """批量检查技能是否可解锁"""
+    def batch_check_unlockable(self, capabilities_or_ids, capabilities: Dict = None) -> Dict:
+        """批量检查技能是否可解锁
+        
+        支持两种调用方式：
+        1. batch_check_unlockable(context) - 检查所有技能
+        2. batch_check_unlockable(skill_ids, capabilities) - 检查指定技能
+        """
+        # 如果第一个参数是字典且没有第二个参数，则检查所有技能
+        if isinstance(capabilities_or_ids, dict) and capabilities is None:
+            context = capabilities_or_ids
+            skill_ids = list(self.skill_tree.skills.keys())
+            return {sid: self.can_unlock(sid, context) for sid in skill_ids if not self.skill_tree.skills[sid].unlocked}
+        
+        # 否则按原API：指定技能列表
+        skill_ids = capabilities_or_ids
         return {sid: self.check_unlock_eligibility(sid, capabilities) for sid in skill_ids}
     
     def get_unlock_progress(self, skill_id: str, capabilities: Dict) -> Dict:
@@ -132,13 +160,14 @@ class SkillUnlocker:
             "can_unlock": prereqs_met and condition_met and not skill.unlocked
         }
     
-    def unlock_all_available(self, capabilities: Dict) -> List[str]:
+    def unlock_all_available(self, context: Dict) -> List[str]:
         """解锁所有可用技能"""
-        unlockable = self.get_unlockable_skills(capabilities)
+        unlockable_dict = self.batch_check_unlockable(context)
+        unlockable = [sid for sid, can_unlock in unlockable_dict.items() if can_unlock]
         unlocked = []
         
         for skill_id in unlockable:
-            if self.unlock_skill(skill_id):
+            if self.unlock_skill(skill_id, context):
                 unlocked.append(skill_id)
         
         return unlocked

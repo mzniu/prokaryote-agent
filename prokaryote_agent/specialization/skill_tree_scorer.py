@@ -106,13 +106,17 @@ class SkillTreeScorer:
     
     def calculate_specialization_depth(self) -> Dict[str, float]:
         """计算各类别的专精深度（平均等级）"""
+        from .skill_node import SkillCategory
+        
+        # 初始化所有类别为0
+        depths = {cat.value: 0.0 for cat in SkillCategory}
+        
         unlocked_skills = self.skill_tree.get_unlocked_skills()
         
         category_levels = {}
         category_counts = {}
         
-        for sid in unlocked_skills:
-            skill = self.skill_tree.skills[sid]
+        for skill in unlocked_skills:
             cat = skill.category.value
             
             if cat not in category_levels:
@@ -122,10 +126,9 @@ class SkillTreeScorer:
             category_levels[cat] += skill.level
             category_counts[cat] += 1
         
-        # 计算平均
-        depths = {}
+        # 计算平均并更新depths
         for cat in category_levels:
-            depths[cat] = category_levels[cat] / category_counts[cat] if category_counts[cat] > 0 else 0
+            depths[cat] = category_levels[cat] / category_counts[cat] if category_counts[cat] > 0 else 0.0
         
         return depths
     
@@ -135,12 +138,16 @@ class SkillTreeScorer:
     
     def get_tier_distribution(self) -> Dict[str, int]:
         """获取层级分布统计"""
+        from .skill_node import SkillTier
+        
+        # 初始化所有层级为0
+        distribution = {tier.name.lower(): 0 for tier in SkillTier}
+        
         unlocked_skills = self.skill_tree.get_unlocked_skills()
         
-        distribution = {}
-        for sid in unlocked_skills:
-            tier = self.skill_tree.skills[sid].tier.name
-            distribution[tier] = distribution.get(tier, 0) + 1
+        for skill in unlocked_skills:
+            tier_key = skill.tier.name.lower()
+            distribution[tier_key] = distribution.get(tier_key, 0) + 1
         
         return distribution
     
