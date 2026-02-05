@@ -1,0 +1,20 @@
+{
+  "lineages": {
+    "main": {
+      "branch_id": "main",
+      "description": "主进化分支",
+      "generations": [
+        0
+      ],
+      "current_generation": 0,
+      "specialization": "general"
+    }
+  },
+  "generation_graph": {
+    "0": {
+      "parent": null,
+      "children": [],
+      "lineage": "main"
+    }
+  }
+}

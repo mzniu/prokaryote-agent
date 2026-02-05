@@ -1,0 +1,11 @@
+# prokaryote-agent V0.2 依赖
+# Python 3.8+ required
+
+# 可选依赖：更精准的资源监控
+psutil>=5.9.0
+
+# 可选依赖：文件读写锁
+filelock>=3.12.0
+
+# V0.2 新增：AI服务调用
+requests>=2.31.0
