@@ -75,9 +75,13 @@ class SkillUnlocker:
             context = context_or_proficiency
             if not self.can_unlock(skill_id, context):
                 return False
-            initial_proficiency = context.get('initial_proficiency', 0.0)
+            initial_proficiency = 0.0
         elif isinstance(context_or_proficiency, (int, float)):
             initial_proficiency = context_or_proficiency
+        elif context_or_proficiency is None:
+            initial_proficiency = 0.0
+        else:
+            initial_proficiency = 0.0
         
         if not self.skill_tree.check_prerequisites(skill_id):
             return False
@@ -85,8 +89,7 @@ class SkillUnlocker:
         skill = self.skill_tree.skills[skill_id]
         skill.unlocked = True
         skill.level = max(1, skill.level)  # 解锁时至少1级
-        if initial_proficiency > 0:
-            skill.proficiency = min(1.0, initial_proficiency)
+        skill.proficiency = max(skill.proficiency, initial_proficiency)  # 保留更高的熟练度
         return True
     
     def can_unlock(self, skill_id: str, capabilities: Dict) -> bool:
@@ -97,15 +100,24 @@ class SkillUnlocker:
         """检查前置技能是否满足"""
         return self.skill_tree.check_prerequisites(skill_id)
     
-    def evaluate_unlock_condition(self, skill_id: str, context: Dict) -> bool:
-        """评估解锁条件"""
-        if skill_id not in self.skill_tree.skills:
-            return False
+    def evaluate_unlock_condition(self, condition_or_skill_id: str, context: Dict) -> bool:
+        """评估解锁条件
         
-        skill = self.skill_tree.skills[skill_id]
+        支持两种调用方式：
+        1. evaluate_unlock_condition(condition_string, context) - 直接评估条件
+        2. evaluate_unlock_condition(skill_id, context) - 评估技能的unlock_condition
+        """
+        # 判断是condition还是skill_id
+        if condition_or_skill_id in self.skill_tree.skills:
+            # 是skill_id，获取其unlock_condition
+            skill = self.skill_tree.skills[condition_or_skill_id]
+            condition = skill.unlock_condition
+        else:
+            # 是condition字符串
+            condition = condition_or_skill_id
         
-        # 如果没有条件，总是通过
-        if not skill.unlock_condition:
+        # 如果没有条件或条件为空，总是通过
+        if not condition or condition.strip() == "":
             return True
         
         # 简单实现：评估条件字符串
@@ -114,14 +126,16 @@ class SkillUnlocker:
             def has_capability(cap_name):
                 return cap_name in context.get("capabilities", [])
             
-            capability_count = len(context.get("capabilities", []))
-            
-            # 安全地评估条件
-            result = eval(skill.unlock_condition, {
+            # 准备上下文变量
+            eval_context = {
                 "__builtins__": {},
                 "has_capability": has_capability,
-                "capability_count": capability_count
-            })
+            }
+            # 添加context中的所有变量
+            eval_context.update(context)
+            
+            # 安全地评估条件
+            result = eval(condition, eval_context)
             return bool(result)
         except:
             return False
@@ -160,14 +174,14 @@ class SkillUnlocker:
             "can_unlock": prereqs_met and condition_met and not skill.unlocked
         }
     
-    def unlock_all_available(self, context: Dict) -> List[str]:
-        """解锁所有可用技能"""
+    def unlock_all_available(self, context: Dict) -> int:
+        """解锁所有可用技能，返回解锁的数量"""
         unlockable_dict = self.batch_check_unlockable(context)
         unlockable = [sid for sid, can_unlock in unlockable_dict.items() if can_unlock]
-        unlocked = []
+        count = 0
         
         for skill_id in unlockable:
             if self.unlock_skill(skill_id, context):
-                unlocked.append(skill_id)
+                count += 1
         
-        return unlocked
+        return count

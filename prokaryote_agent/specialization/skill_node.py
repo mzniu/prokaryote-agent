@@ -88,7 +88,7 @@ class SkillNode:
             "skill_id": self.id,  # 兼容性
             "name": self.name,
             "category": self.category.value,
-            "tier": self.tier.value,
+            "tier": self.tier.name.lower(),  # 返回名称而非数值
             "description": self.description,
             "level": self.level,
             "proficiency": self.proficiency,
@@ -104,11 +104,21 @@ class SkillNode:
         """从字典创建"""
         # 兼容skill_id和id两种字段名
         skill_id = data.get("id") or data.get("skill_id")
+        
+        # 处理tier：可能是字符串名称或整数值
+        tier_data = data["tier"]
+        if isinstance(tier_data, str):
+            # 字符串名称，如'basic', 'BASIC'
+            tier = SkillTier[tier_data.upper()]
+        else:
+            # 整数值
+            tier = SkillTier(tier_data)
+        
         return cls(
             id=skill_id,
             name=data["name"],
             category=SkillCategory(data["category"]),
-            tier=SkillTier(data["tier"]),
+            tier=tier,
             description=data.get("description", ""),
             level=data.get("level", 0),
             proficiency=data.get("proficiency", 0.0),

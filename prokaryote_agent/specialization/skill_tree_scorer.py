@@ -163,10 +163,27 @@ class SkillTreeScorer:
     
     def get_progression_summary(self) -> Dict:
         """获取综合进度摘要"""
+        unlocked_skills = self.skill_tree.get_unlocked_skills()
+        total_skills = len(self.skill_tree.skills)
+        unlocked_count = len(unlocked_skills)
+        locked_count = total_skills - unlocked_count
+        
+        # 计算平均等级
+        avg_level = sum(s.level for s in unlocked_skills) / unlocked_count if unlocked_count > 0 else 0.0
+        
+        is_specialist_result, spec_category = self.is_specialist()
+        
         return {
+            "total_skills": total_skills,
+            "unlocked_skills": unlocked_count,
+            "locked_skills": locked_count,
+            "unlock_percentage": (unlocked_count / total_skills * 100) if total_skills > 0 else 0.0,
+            "average_level": avg_level,
+            "total_score": self.calculate_tree_score(),
             "tree_score": self.calculate_tree_score(),
             "specialization": self.identify_specialization(),
-            "is_specialist": self.is_specialist(),
+            "is_specialist": is_specialist_result,
+            "primary_specialization": spec_category,
             "breadth": self.get_specialization_breadth(),
             "category_breakdown": self.get_category_breakdown(),
             "tier_distribution": self.get_tier_distribution(),

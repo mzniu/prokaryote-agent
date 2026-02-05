@@ -1,5 +1,5 @@
 """EvolutionStrategy - 进化策略生成器"""
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from .skill_tree import SkillTree
 from .skill_unlocker import SkillUnlocker
 from .skill_tree_scorer import SkillTreeScorer
@@ -108,22 +108,32 @@ class EvolutionStrategy:
         
         return synergy_ratio * 0.5  # 最高0.5协同加成
     
-    def recommend_next_skills(self, capabilities: Dict, count: int = 3) -> List[str]:
-        """推荐多个下一步技能"""
-        unlockable = self.unlocker.get_unlockable_skills(capabilities)
+    def recommend_next_skills(self, capabilities: Dict, count: int = 3, prefer_specialization: bool = False) -> List[Tuple[str, float]]:
+        """推荐多个下一步技能，返回(skill_id, priority)元组列表"""
+        # 使用batch_check_unlockable获取可解锁技能
+        unlockable_dict = self.unlocker.batch_check_unlockable(capabilities)
+        unlockable = [sid for sid, can in unlockable_dict.items() if can]
         
         if not unlockable:
             return []
         
-        # 按层级和类别排序
+        # 计算每个技能的优先级分数
         scored = []
         for skill_id in unlockable:
             skill = self.skill_tree.skills[skill_id]
-            score = skill.tier.value * 10
-            scored.append((skill_id, score))
+            priority = skill.tier.value * 10  # 基础优先级
+            
+            # 如果prefer_specialization，增加主专精类别的权重
+            if prefer_specialization and self.scorer:
+                is_specialist, spec_category = self.scorer.is_specialist(threshold=0.5)
+                if is_specialist and skill.category.value == spec_category:
+                    priority += 20  # 专精加成
+            
+            scored.append((skill_id, float(priority)))
         
-        scored.sort(key=lambda x: x[1])
-        return [sid for sid, _ in scored[:count]]
+        # 按优先级降序排序
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:count]
     
     def adjust_strategy_based_on_tree(self) -> str:
         """根据技能树状态调整策略"""
