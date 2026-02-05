@@ -4,6 +4,7 @@ import time
 import threading
 from pathlib import Path
 from datetime import datetime
+import psutil
 
 class EvolutionDaemon:
     def __init__(self, config_path=None, generation_manager=None, genetic_transmitter=None, 
@@ -32,39 +33,9 @@ class EvolutionDaemon:
         self.evolution_count_in_generation = 0
         self.agent_messages = []
         self.restart_threshold = self.config.get("restart_threshold", 10)
-        self.current_generation = 0  # 新增字段以匹配测试
-        self.daemon_running = False  # 新增字段以匹配测试
-
-    def _handle_agent_message(self, message):
-        """处理来自智能体的消息"""
-        if message:
-            self.agent_messages.append(message)
-            msg_type = message.get("type", "unknown")
-            event_type = message.get("event", "unknown")
-            
-            # 兼容两种格式：type="evolution_success" 或 event="EVOLUTION_SUCCESS"
-            if msg_type == "evolution_success" or event_type == "EVOLUTION_SUCCESS":
-                self.evolution_count_in_generation += 1
-            elif msg_type == "heartbeat" or event_type == "HEARTBEAT":
-                self.last_heartbeat_time = datetime.now().isoformat()
-            
-            return True
-        return False
-        
-    def handle_agent_message(self, message):
-        """处理消息的公有包装"""
-        return self._handle_agent_message(message)
-        
-    def get_status(self):
-        """获取守护进程状态"""
-        return {
-            "running": self.running,
-            "daemon_running": self.daemon_running,
-            "evolution_count": self.evolution_count_in_generation,
-            "threshold": self.config.get("evolution_threshold", 10),
-            "current_generation": self.current_generation,
-            "agent_alive": self._is_agent_alive()
-        }
+        self.current_generation = 0  
+        self.daemon_running = False  
+        self.agent_pid = None
 
     def _load_config_from_file(self, path):
         """从文件加载配置"""
@@ -87,6 +58,7 @@ class EvolutionDaemon:
             return False
         
         self.running = True
+        self.daemon_running = True
         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.monitor_thread.start()
         return True
@@ -94,6 +66,7 @@ class EvolutionDaemon:
     def stop(self):
         """停止守护进程"""
         self.running = False
+        self.daemon_running = False
         if self.monitor_thread:
             self.monitor_thread.join(timeout=2.0)
         return True
@@ -113,15 +86,36 @@ class EvolutionDaemon:
     
     def _is_agent_alive(self):
         """检查智能体是否存活"""
+        # 如果设置了PID，检查进程
+        if self.agent_pid:
+            try:
+                if psutil: 
+                    # 检查进程是否存在
+                    found = False
+                    for proc in psutil.process_iter(['pid']):
+                        if proc.info['pid'] == self.agent_pid:
+                            found = True
+                            break
+                    if not found:
+                        return False
+            except Exception:
+                # 忽略检查错误
+                pass
+        
+        # 如果没有PID或检查通过，继续检查消息心跳
+        
         # 简单实现：检查最近是否有消息
         if not self.agent_messages:
-            return True
+            # 没有消息记录，默认为False (匹配测试预期)
+            return False
         
         last_message_time = self.agent_messages[-1].get("timestamp", 0)
         current_time = time.time()
         
         # 如果超过10秒没有消息，认为可能无响应
         return (current_time - last_message_time) < 10
+
+
     
     def _should_trigger_generation_transition(self):
         """判断是否应该触发代际切换"""
@@ -163,14 +157,33 @@ class EvolutionDaemon:
         
         print(f"代际切换完成: gen_{current_gen} -> gen_{current_gen + 1}")
     
+    def _handle_agent_message(self, message):
+        """处理来自智能体的消息 (内部别名兼容测试)"""
+        return self.handle_agent_message(message)
+
     def handle_agent_message(self, message):
-        """处理智能体消息"""
-        message["timestamp"] = time.time()
-        self.agent_messages.append(message)
-        
-        # 限制消息历史长度
-        if len(self.agent_messages) > 100:
-            self.agent_messages = self.agent_messages[-100:]
+        """处理来自智能体的消息"""
+        if message:
+            # 统一添加时间戳
+            if "timestamp" not in message:
+                message["timestamp"] = time.time()
+                
+            self.agent_messages.append(message)
+            # 限制消息历史长度
+            if len(self.agent_messages) > 100:
+                self.agent_messages = self.agent_messages[-100:]
+            
+            msg_type = message.get("type", "unknown")
+            event_type = message.get("event", "unknown")
+            
+            # 兼容两种格式：type="evolution_success" 或 event="EVOLUTION_SUCCESS"
+            if msg_type == "evolution_success" or event_type == "EVOLUTION_SUCCESS":
+                self.evolution_count_in_generation += 1
+            elif msg_type == "heartbeat" or event_type == "HEARTBEAT":
+                self.last_heartbeat_time = datetime.now().isoformat()
+            
+            return True
+        return False
     
     def report_evolution(self, event_type="task_completed"):
         """报告进化事件"""
@@ -190,5 +203,7 @@ class EvolutionDaemon:
             "daemon_running": self.running,
             "evolution_count": self.evolution_count_in_generation,
             "threshold": self.config.get("evolution_threshold", 10),
-            "current_generation": self.generation_manager.get_current_generation() if self.generation_manager else 0
+            "restart_threshold": self.config.get("restart_threshold", 10),
+            "current_generation": self.generation_manager.get_current_generation() if self.generation_manager else 0,
+            "agent_alive": self._is_agent_alive()
         }
