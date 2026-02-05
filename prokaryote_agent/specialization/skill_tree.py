@@ -82,6 +82,30 @@ class SkillTree:
         """获取已解锁的技能列表"""
         return [sid for sid, skill in self.skills.items() if skill.unlocked]
     
+    def get_locked_skills(self) -> List[str]:
+        """获取锁定的技能列表"""
+        return [sid for sid, skill in self.skills.items() if not skill.unlocked]
+    
+    def get_skill(self, skill_id: str):
+        """获取指定技能"""
+        return self.skills.get(skill_id)
+    
+    def get_skills_by_tier(self, tier: SkillTier) -> List[str]:
+        """获取指定层级的技能"""
+        return [sid for sid, skill in self.skills.items() if skill.tier == tier]
+    
+    def get_available_to_unlock(self) -> List[str]:
+        """获取可解锁的技能（前置条件满足但未解锁）"""
+        return self.get_available_skills()
+    
+    def __contains__(self, skill_id: str) -> bool:
+        """支持 'skill_id in tree' 语法"""
+        return skill_id in self.skills
+    
+    def __len__(self) -> int:
+        """返回技能总数"""
+        return len(self.skills)
+    
     def get_available_skills(self) -> List[str]:
         """获取可解锁的技能（前置条件满足但未解锁）"""
         available = []

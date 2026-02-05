@@ -1,4 +1,5 @@
 """SkillLevelSystem - 技能等级与熟练度系统"""
+from typing import Dict, List
 from .skill_tree import SkillTree
 
 class SkillLevelSystem:
@@ -67,3 +68,59 @@ class SkillLevelSystem:
         for skill_id in self.skill_tree.skills:
             total += self.get_skill_power(skill_id)
         return total
+    
+    def batch_gain_proficiency(self, gains: Dict[str, float]) -> List[str]:
+        """批量增加熟练度，返回升级的技能列表"""
+        leveled_up = []
+        
+        for skill_id, amount in gains.items():
+            if skill_id not in self.skill_tree.skills:
+                continue
+            
+            skill = self.skill_tree.skills[skill_id]
+            old_level = skill.level
+            
+            self.gain_proficiency(skill_id, amount)
+            
+            if skill.level > old_level:
+                leveled_up.append(skill_id)
+        
+        return leveled_up
+    
+    def get_level_bonuses(self, skill_id: str) -> Dict:
+        """获取技能等级加成"""
+        if skill_id not in self.skill_tree.skills:
+            return {}
+        
+        skill = self.skill_tree.skills[skill_id]
+        
+        # 每级提供不同加成
+        bonuses = {
+            "power_bonus": skill.level * 10,
+            "efficiency_bonus": skill.level * 0.05,  # 5%每级
+            "quality_bonus": skill.level * 0.1  # 10%每级
+        }
+        
+        return bonuses
+    
+    def get_progress_to_next_level(self, skill_id: str) -> Dict:
+        """获取到下一级的进度信息"""
+        if skill_id not in self.skill_tree.skills:
+            return {}
+        
+        skill = self.skill_tree.skills[skill_id]
+        
+        if skill.level >= 5:
+            return {
+                "current_level": 5,
+                "max_level": True,
+                "proficiency": skill.proficiency,
+                "progress": 1.0
+            }
+        
+        return {
+            "current_level": skill.level,
+            "proficiency": skill.proficiency,
+            "progress": skill.proficiency,
+            "remaining": 1.0 - skill.proficiency
+        }

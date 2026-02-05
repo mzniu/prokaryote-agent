@@ -60,7 +60,7 @@ class SkillUnlocker:
         unlockable.sort(key=lambda sid: self.skill_tree.skills[sid].tier.value)
         return unlockable[0]
     
-    def unlock_skill(self, skill_id: str) -> bool:
+    def unlock_skill(self, skill_id: str, initial_proficiency: float = 0.0) -> bool:
         """解锁技能"""
         if skill_id not in self.skill_tree.skills:
             return False
@@ -68,5 +68,77 @@ class SkillUnlocker:
         if not self.skill_tree.check_prerequisites(skill_id):
             return False
         
-        self.skill_tree.skills[skill_id].unlocked = True
+        skill = self.skill_tree.skills[skill_id]
+        skill.unlocked = True
+        if initial_proficiency > 0:
+            skill.proficiency = min(1.0, initial_proficiency)
         return True
+    
+    def can_unlock(self, skill_id: str, capabilities: Dict) -> bool:
+        """检查是否可以解锁技能（别名）"""
+        return self.check_unlock_eligibility(skill_id, capabilities)
+    
+    def check_prerequisites(self, skill_id: str) -> bool:
+        """检查前置技能是否满足"""
+        return self.skill_tree.check_prerequisites(skill_id)
+    
+    def evaluate_unlock_condition(self, skill_id: str, context: Dict) -> bool:
+        """评估解锁条件"""
+        if skill_id not in self.skill_tree.skills:
+            return False
+        
+        skill = self.skill_tree.skills[skill_id]
+        
+        # 如果没有条件，总是通过
+        if not skill.unlock_condition:
+            return True
+        
+        # 简单实现：评估条件字符串
+        try:
+            # 提供辅助函数
+            def has_capability(cap_name):
+                return cap_name in context.get("capabilities", [])
+            
+            capability_count = len(context.get("capabilities", []))
+            
+            # 安全地评估条件
+            result = eval(skill.unlock_condition, {
+                "__builtins__": {},
+                "has_capability": has_capability,
+                "capability_count": capability_count
+            })
+            return bool(result)
+        except:
+            return False
+    
+    def batch_check_unlockable(self, skill_ids: List[str], capabilities: Dict) -> Dict[str, bool]:
+        """批量检查技能是否可解锁"""
+        return {sid: self.check_unlock_eligibility(sid, capabilities) for sid in skill_ids}
+    
+    def get_unlock_progress(self, skill_id: str, capabilities: Dict) -> Dict:
+        """获取解锁进度详情"""
+        if skill_id not in self.skill_tree.skills:
+            return {"error": "Skill not found"}
+        
+        skill = self.skill_tree.skills[skill_id]
+        prereqs_met = self.skill_tree.check_prerequisites(skill_id)
+        condition_met = self.evaluate_unlock_condition(skill_id, {"capabilities": capabilities})
+        
+        return {
+            "skill_id": skill_id,
+            "unlocked": skill.unlocked,
+            "prerequisites_met": prereqs_met,
+            "condition_met": condition_met,
+            "can_unlock": prereqs_met and condition_met and not skill.unlocked
+        }
+    
+    def unlock_all_available(self, capabilities: Dict) -> List[str]:
+        """解锁所有可用技能"""
+        unlockable = self.get_unlockable_skills(capabilities)
+        unlocked = []
+        
+        for skill_id in unlockable:
+            if self.unlock_skill(skill_id):
+                unlocked.append(skill_id)
+        
+        return unlocked

@@ -38,12 +38,22 @@ class SkillNode:
     proficiency: float = 0.0  # 0.0-1.0
     prerequisites: List[str] = field(default_factory=list)
     unlocked: bool = False
+    unlock_condition: str = ""  # 解锁条件表达式
+    is_combination: bool = False  # 是否为组合技能
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     @property
     def skill_id(self):
         """为兼容性提供skill_id别名"""
         return self.id
+    
+    def is_locked(self) -> bool:
+        """检查技能是否锁定"""
+        return not self.unlocked
+    
+    def is_max_level(self) -> bool:
+        """检查是否达到最大等级"""
+        return self.level >= 5
     
     def __post_init__(self):
         """验证数据"""
@@ -60,6 +70,10 @@ class SkillNode:
         # 验证proficiency范围
         if not (0.0 <= self.proficiency <= 1.0):
             raise ValueError(f"Proficiency must be 0.0-1.0, got {self.proficiency}")
+        
+        # 锁定技能不能有熟练度
+        if not self.unlocked and self.proficiency > 0.0:
+            raise ValueError(f"Locked skill cannot have proficiency > 0, got {self.proficiency}")
     
     def to_dict(self):
         """转换为字典"""
@@ -74,6 +88,8 @@ class SkillNode:
             "proficiency": self.proficiency,
             "prerequisites": self.prerequisites,
             "unlocked": self.unlocked,
+            "unlock_condition": self.unlock_condition,
+            "is_combination": self.is_combination,
             "metadata": self.metadata
         }
     
@@ -92,5 +108,7 @@ class SkillNode:
             proficiency=data.get("proficiency", 0.0),
             prerequisites=data.get("prerequisites", []),
             unlocked=data.get("unlocked", False),
+            unlock_condition=data.get("unlock_condition", ""),
+            is_combination=data.get("is_combination", False),
             metadata=data.get("metadata", {})
         )
