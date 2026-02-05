@@ -60,28 +60,29 @@ class SkillUnlocker:
         unlockable.sort(key=lambda sid: self.skill_tree.skills[sid].tier.value)
         return unlockable[0]
     
-    def unlock_skill(self, skill_id: str, context_or_proficiency=None, initial_proficiency: float = 0.0) -> bool:
+    def unlock_skill(self, skill_id: str, context_or_proficiency=None, initial_proficiency: float = None) -> bool:
         """解锁技能
         
-        支持两种调用方式：
+        支持多种调用方式：
         1. unlock_skill(skill_id, context) - 带条件检查
         2. unlock_skill(skill_id, initial_proficiency=0.3) - 直接解锁
+        3. unlock_skill(skill_id, context, initial_proficiency=0.3) - 条件检查+设置熟练度
         """
         if skill_id not in self.skill_tree.skills:
             return False
+        
+        # 确定proficiency值
+        prof = 0.0
+        if initial_proficiency is not None:
+            prof = initial_proficiency
         
         # 检查是否传入了context（字典）
         if isinstance(context_or_proficiency, dict):
             context = context_or_proficiency
             if not self.can_unlock(skill_id, context):
                 return False
-            initial_proficiency = 0.0
         elif isinstance(context_or_proficiency, (int, float)):
-            initial_proficiency = context_or_proficiency
-        elif context_or_proficiency is None:
-            initial_proficiency = 0.0
-        else:
-            initial_proficiency = 0.0
+            prof = context_or_proficiency
         
         if not self.skill_tree.check_prerequisites(skill_id):
             return False
@@ -89,7 +90,7 @@ class SkillUnlocker:
         skill = self.skill_tree.skills[skill_id]
         skill.unlocked = True
         skill.level = max(1, skill.level)  # 解锁时至少1级
-        skill.proficiency = max(skill.proficiency, initial_proficiency)  # 保留更高的熟练度
+        skill.proficiency = max(skill.proficiency, prof)  # 保留更高的熟练度
         return True
     
     def can_unlock(self, skill_id: str, capabilities: Dict) -> bool:
