@@ -7,7 +7,7 @@ Supports starting/stopping the daemon, querying status, managing generations,
 and visualizing skill trees.
 
 Usage:
-    python daemon.py start [--config CONFIG]
+    python daemon.py start [--config CONFIG] [--foreground]
     python daemon.py stop [--force]
     python daemon.py status [--verbose]
     python daemon.py rollback <generation> [--verify]
@@ -24,6 +24,7 @@ import json
 import os
 import time
 import signal
+import subprocess
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -49,6 +50,7 @@ class DaemonCLI:
         self.config_path = config_path
         self.config = self._load_config()
         self.pid_file = Path("./prokaryote_agent/daemon.pid")
+        self.status_file = Path("./prokaryote_agent/daemon_status.json")
         self.gen_manager = GenerationManager()
     
     def _load_config(self) -> Dict[str, Any]:
@@ -124,7 +126,7 @@ class DaemonCLI:
         Start the daemon.
         
         Args:
-            args: Command-line arguments
+            args: Command-line arguments (--foreground for foreground mode)
         
         Returns:
             Exit code (0 for success)
@@ -134,39 +136,150 @@ class DaemonCLI:
             print(f"⚠️  Daemon is already running (PID: {pid})")
             return 1
         
-        print("🚀 Starting Prokaryote Evolution Daemon...")
+        # Check if foreground mode requested
+        foreground = getattr(args, 'foreground', False)
+        
+        if foreground:
+            return self._run_foreground()
+        else:
+            return self._run_background()
+    
+    def _run_background(self) -> int:
+        """Start daemon in background mode."""
+        print("🚀 Starting Prokaryote Evolution Daemon in background...")
+        
+        try:
+            # Start as a subprocess
+            import sys
+            cmd = [sys.executable, __file__, 'start', '--foreground', '--config', self.config_path]
+            
+            # Windows-specific: use CREATE_NEW_PROCESS_GROUP and DETACHED_PROCESS
+            if os.name == 'nt':
+                DETACHED_PROCESS = 0x00000008
+                CREATE_NEW_PROCESS_GROUP = 0x00000200
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+                )
+            else:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    start_new_session=True
+                )
+            
+            # Wait a moment for the process to start
+            time.sleep(1)
+            
+            # Check if it started successfully
+            if self._is_daemon_running():
+                pid = self._read_pid()
+                print(f"✅ Daemon started successfully (PID: {pid})")
+                print(f"📊 Evolution threshold: {self.config['restart_trigger']['threshold']} evolutions")
+                print(f"📁 Generations directory: {self.config['generation_management']['generations_dir']}")
+                print(f"\nUse 'daemon.py status' to check current state")
+                print("Use 'daemon.py stop' to terminate daemon")
+                return 0
+            else:
+                print("❌ Failed to start daemon - process exited immediately")
+                return 1
+                
+        except Exception as e:
+            print(f"❌ Failed to start daemon: {e}")
+            return 1
+    
+    def _run_foreground(self) -> int:
+        """Run daemon in foreground mode."""
+        print("🚀 Starting Prokaryote Evolution Daemon (foreground mode)...")
         
         try:
             # Create daemon instance
             daemon = EvolutionDaemon(config_path=self.config_path)
             
-            # Start Agent process
-            success = daemon.start_agent()
-            if not success:
-                print("❌ Failed to start Agent process")
-                return 1
+            # Write PID file
+            self._write_pid(os.getpid())
             
-            # Get Agent PID from daemon
-            agent_pid = daemon.agent_pid
-            if not agent_pid:
-                print("❌ Failed to get Agent PID")
-                return 1
+            # Initialize status
+            self._update_status({
+                "running": True,
+                "pid": os.getpid(),
+                "started_at": datetime.now().isoformat(),
+                "evolution_count": 0,
+                "current_generation": 1,
+                "domain": self.config.get('specialization', {}).get('default_domain', 'unknown')
+            })
             
-            # Write daemon PID (using Agent PID for now)
-            self._write_pid(agent_pid)
+            print(f"✅ Daemon running (PID: {os.getpid()})")
+            print(f"📊 Evolution threshold: {self.config['restart_trigger']['threshold']} evolutions")
+            print(f"📁 Generations directory: {self.config['generation_management']['generations_dir']}")
+            print(f"Press Ctrl+C to stop...\n")
             
-            print(f"✅ Daemon started successfully (PID: {agent_pid})")
-            print(f"📊 Evolution threshold: {self.config['restart_trigger']['evolution_count_threshold']} evolutions")
-            print(f"📁 Generations directory: {self.config['generation_management']['snapshot_dir']}")
-            print(f"\nMonitoring Agent evolution...")
-            print("Use 'daemon.py status' to check current state")
-            print("Use 'daemon.py stop' to terminate daemon")
+            # Setup signal handlers
+            def handle_signal(signum, frame):
+                print("\n📨 Received shutdown signal...")
+                daemon.stop()
+                self._cleanup()
+                sys.exit(0)
+            
+            signal.signal(signal.SIGTERM, handle_signal)
+            signal.signal(signal.SIGINT, handle_signal)
+            
+            # Start daemon
+            daemon.start()
+            
+            # Main loop - keep running and update status
+            evolution_count = 0
+            while daemon.running:
+                time.sleep(5)
+                
+                # Update status periodically
+                self._update_status({
+                    "running": True,
+                    "pid": os.getpid(),
+                    "started_at": self._read_status().get('started_at'),
+                    "last_check": datetime.now().isoformat(),
+                    "evolution_count": evolution_count,
+                    "current_generation": daemon.current_generation,
+                    "domain": self.config.get('specialization', {}).get('default_domain', 'unknown')
+                })
             
             return 0
-        
+            
+        except KeyboardInterrupt:
+            print("\n📨 Shutting down...")
+            self._cleanup()
+            return 0
         except Exception as e:
-            print(f"❌ Failed to start daemon: {e}")
+            print(f"❌ Daemon error: {e}")
+            self._cleanup()
             return 1
+    
+    def _update_status(self, status: Dict[str, Any]) -> None:
+        """Update daemon status file."""
+        self.status_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.status_file, 'w', encoding='utf-8') as f:
+            json.dump(status, f, indent=2)
+    
+    def _read_status(self) -> Dict[str, Any]:
+        """Read daemon status from file."""
+        if not self.status_file.exists():
+            return {}
+        try:
+            with open(self.status_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    
+    def _cleanup(self) -> None:
+        """Clean up PID and status files."""
+        if self.pid_file.exists():
+            self.pid_file.unlink()
+        self._update_status({"running": False, "stopped_at": datetime.now().isoformat()})
     
     def cmd_stop(self, args: argparse.Namespace) -> int:
         """
@@ -233,6 +346,7 @@ class DaemonCLI:
         """
         is_running = self._is_daemon_running()
         pid = self._read_pid()
+        status = self._read_status()
         
         print("=" * 50)
         print("📊 Prokaryote Evolution Daemon Status")
@@ -241,8 +355,21 @@ class DaemonCLI:
         if is_running:
             print(f"Status: 🟢 Running")
             print(f"PID: {pid}")
+            
+            # Show detailed status from status file
+            if status:
+                if status.get('started_at'):
+                    print(f"Started: {status['started_at']}")
+                if status.get('domain'):
+                    print(f"Domain: {status['domain']}")
+                if status.get('evolution_count') is not None:
+                    print(f"Evolutions: {status['evolution_count']}")
+                if status.get('last_check'):
+                    print(f"Last Check: {status['last_check']}")
         else:
             print(f"Status: 🔴 Stopped")
+            if status.get('stopped_at'):
+                print(f"Stopped: {status['stopped_at']}")
         
         # Get current generation info
         try:
@@ -601,6 +728,8 @@ def main():
     
     # Start command
     start_parser = subparsers.add_parser('start', help='Start the daemon')
+    start_parser.add_argument('--foreground', '-f', action='store_true', 
+                              help='Run in foreground (default: background)')
     
     # Stop command
     stop_parser = subparsers.add_parser('stop', help='Stop the daemon')

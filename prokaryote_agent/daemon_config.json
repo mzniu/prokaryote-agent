@@ -41,15 +41,15 @@
   },
   
   "specialization": {
-    "default_domain": "software_development",
-    "skill_tree_file": "specialization/domains/software_dev_tree.json",
-    "skill_tree_path": "./prokaryote_agent/specialization/domains/software_dev_tree.json",
+    "default_domain": "legal",
+    "skill_tree_file": "specialization/domains/legal_tree.json",
+    "skill_tree_path": "./prokaryote_agent/specialization/domains/legal_tree.json",
     "evolution_strategy": "balanced",
     "auto_inject_goals": true,
     "readiness_threshold": 0.7,
-    "allow_domain_switch": false,
+    "allow_domain_switch": true,
     "skill_upgrade_enabled": true,
-    "description": "专业化进化配置，默认软件开发领域"
+    "description": "专业化进化配置，当前法律专家领域"
   },
   
   "monitoring": {
