@@ -28,6 +28,8 @@ from prokaryote_agent import (
     query_prokaryote_state
 )
 from prokaryote_agent.goal_manager import EvolutionGoalManager, GoalStatus
+from prokaryote_agent.skills.skill_base import SkillLibrary
+from prokaryote_agent.skills.skill_generator import SkillGenerator
 
 
 class SkillTreeManager:
@@ -220,6 +222,10 @@ class SimpleEvolutionAgent:
         # 技能树管理器
         self.skill_tree_manager: Optional[SkillTreeManager] = None
         
+        # 技能库和生成器（用于真正实现技能）
+        self.skill_library: Optional[SkillLibrary] = None
+        self.skill_generator: Optional[SkillGenerator] = None
+        
         # 设置日志
         logging.basicConfig(
             level=logging.INFO,
@@ -260,7 +266,7 @@ class SimpleEvolutionAgent:
         print("✅ 核心系统初始化成功")
         
         # 加载目标
-        print("\n[2/3] 加载进化目标...")
+        print("\n[2/4] 加载进化目标...")
         self.goal_manager = EvolutionGoalManager(self.goal_file)
         goals = self.goal_manager.load_goals()
         
@@ -270,7 +276,7 @@ class SimpleEvolutionAgent:
         print(f"   - 已完成: {stats['completed']}")
         
         # 加载技能树
-        print("\n[3/3] 加载技能树...")
+        print("\n[3/4] 加载技能树...")
         skill_tree_path = self.config.get('specialization', {}).get('skill_tree_path')
         if skill_tree_path:
             # 处理相对路径（配置中可能是 ./xxx 或 xxx 形式）
@@ -291,6 +297,15 @@ class SimpleEvolutionAgent:
                 print(f"⚠️  技能树文件不存在: {full_path}")
         else:
             print("⚠️  未配置技能树路径")
+        
+        # 初始化技能库和生成器
+        print("\n[4/4] 初始化技能库...")
+        self.skill_library = SkillLibrary()
+        self.skill_generator = SkillGenerator(self.skill_library)
+        lib_stats = self.skill_library.get_statistics()
+        print(f"✅ 技能库已加载")
+        print(f"   - 已学习技能: {lib_stats['total_skills']}")
+        print(f"   - 总执行次数: {lib_stats['total_executions']}")
         
         return True
     
@@ -404,18 +419,109 @@ class SimpleEvolutionAgent:
                 self.logger.warning(f"❌ 提升失败: {skill_name}")
     
     def _train_skill_unlock(self, skill: Dict) -> bool:
-        """训练解锁技能（实际应该调用能力生成器）"""
-        # TODO: 集成实际的能力生成逻辑
-        # 目前只是模拟训练过程
-        time.sleep(2)
-        return True
+        """
+        训练解锁技能 - 学习一个新技能
+        
+        这会调用技能生成器，生成技能的实际代码实现
+        """
+        if not self.skill_generator:
+            self.logger.warning("技能生成器未初始化")
+            return False
+        
+        skill_id = skill['id']
+        
+        # 检查是否已经学习过
+        existing = self.skill_library.get_skill(skill_id)
+        if existing:
+            self.logger.info(f"   技能已存在于库中: {skill_id}")
+            return True
+        
+        # 构建技能定义
+        skill_definition = {
+            'id': skill_id,
+            'name': skill.get('name', skill_id),
+            'tier': skill.get('tier', 'basic'),
+            'domain': skill.get('metadata', {}).get('domain', 'general'),
+            'description': skill.get('description', ''),
+            'capabilities': self._extract_capabilities(skill),
+            'prerequisites': skill.get('prerequisites', [])
+        }
+        
+        self.logger.info(f"   正在生成技能代码...")
+        
+        # 调用技能生成器学习技能
+        result = self.skill_generator.learn_skill(skill_definition)
+        
+        if result['success']:
+            self.logger.info(f"   ✓ 技能代码已保存: {result['code_path']}")
+            return True
+        else:
+            self.logger.error(f"   ✗ 技能生成失败: {result.get('error')}")
+            return False
     
     def _train_skill_level_up(self, skill: Dict) -> bool:
-        """训练提升技能等级（实际应该调用能力生成器）"""
-        # TODO: 集成实际的能力生成逻辑
-        # 目前只是模拟训练过程
-        time.sleep(2)
-        return True
+        """
+        训练提升技能等级 - 增强已有技能
+        
+        技能等级提升意味着：
+        - 增加熟练度
+        - 可能增加新功能
+        - 优化性能
+        """
+        if not self.skill_generator:
+            self.logger.warning("技能生成器未初始化")
+            return False
+        
+        skill_id = skill['id']
+        current_level = skill.get('level', 0)
+        target_level = current_level + 1
+        
+        # 检查技能是否存在
+        existing = self.skill_library.get_skill(skill_id)
+        if not existing:
+            # 如果技能不存在，先学习
+            self.logger.info(f"   技能未学习，先进行学习...")
+            if not self._train_skill_unlock(skill):
+                return False
+        
+        self.logger.info(f"   正在升级技能...")
+        
+        # 调用技能生成器升级技能
+        result = self.skill_generator.upgrade_skill(skill_id, target_level)
+        
+        if result['success']:
+            enhancements = result.get('enhancements', [])
+            if enhancements:
+                for enhancement in enhancements:
+                    self.logger.info(f"   ✓ {enhancement}")
+            return True
+        else:
+            self.logger.error(f"   ✗ 技能升级失败: {result.get('error')}")
+            return False
+    
+    def _extract_capabilities(self, skill: Dict) -> List[str]:
+        """从技能定义中提取能力列表"""
+        # 尝试从描述中提取能力
+        description = skill.get('description', '')
+        capabilities = []
+        
+        # 根据技能名称和描述推断能力
+        name = skill.get('name', '')
+        if '检索' in name or 'research' in skill.get('id', ''):
+            capabilities.extend(['检索法条', '查找判例', '搜索法规'])
+        if '起草' in name or '文书' in name or 'drafting' in skill.get('id', ''):
+            capabilities.extend(['起草文书', '格式规范', '内容组织'])
+        if '分析' in name or 'analysis' in skill.get('id', ''):
+            capabilities.extend(['案例分析', '事实提取', '法律适用分析'])
+        if '审查' in name or 'review' in skill.get('id', ''):
+            capabilities.extend(['条款审查', '风险识别', '合规检查'])
+        if '推理' in name or 'reasoning' in skill.get('id', ''):
+            capabilities.extend(['法律推理', '逻辑论证', '结论推导'])
+        
+        if not capabilities:
+            capabilities = [f'{name}能力']
+        
+        return capabilities
     
     def _execute_goal(self, goal) -> bool:
         """执行目标（简化版）"""
