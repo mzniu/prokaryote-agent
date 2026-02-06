@@ -110,5 +110,18 @@
     "cross_domain_learning": false,
     "rlhf_integration": false,
     "description": "实验性功能（默认关闭）"
+  },
+
+  "ai": {
+    "provider": "deepseek",
+    "api_key": "",
+    "api_base": "https://api.deepseek.com/v1",
+    "model": "deepseek-reasoner",
+    "max_tokens": 40000,
+    "temperature": 0.7,
+    "timeout": 60,
+    "max_retries": 3,
+    "retry_delay": 2,
+    "description": "AI服务配置，api_key为空时从环境变量DEEPSEEK_API_KEY读取"
   }
 }

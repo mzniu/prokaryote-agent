@@ -7,7 +7,8 @@ import os
 import json
 import time
 import logging
-from typing import Dict, Any, Optional, List
+from pathlib import Path
+from typing import Dict, Any, Optional, List, Union
 from dataclasses import dataclass
 
 try:
@@ -17,6 +18,9 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+# 默认配置文件路径
+DEFAULT_CONFIG_PATH = Path(__file__).parent / "daemon_config.json"
 
 
 @dataclass
@@ -37,33 +41,80 @@ class AIAdapter:
     """
     AI服务适配器
     统一接口封装 DeepSeek API 调用
+    
+    配置优先级：
+    1. 构造函数传入的 config 参数
+    2. 配置文件 daemon_config.json 中的 ai 节
+    3. 环境变量 DEEPSEEK_API_KEY 等
     """
     
-    def __init__(self, config: Optional[AIConfig] = None):
+    def __init__(self, config: Optional[AIConfig] = None, 
+                 config_path: Optional[Union[str, Path]] = None):
         """
         初始化AI适配器
         
         Args:
-            config: AI配置对象，如果为None则从环境变量读取
+            config: AI配置对象，如果为None则从配置文件或环境变量读取
+            config_path: 配置文件路径，默认为 daemon_config.json
         """
-        self.config = config or self._load_config_from_env()
         self.logger = logging.getLogger(f"{__name__}.AIAdapter")
+        self.config_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+        self.config = config or self._load_config()
         
         if not REQUESTS_AVAILABLE:
             self.logger.warning("requests库未安装，AI功能将不可用。请运行: pip install requests")
         
         if not self.config.api_key:
-            self.logger.warning("未设置API密钥。请设置环境变量 DEEPSEEK_API_KEY 或在配置中提供")
+            self.logger.warning("未设置API密钥。请在配置文件或环境变量 DEEPSEEK_API_KEY 中设置")
     
-    def _load_config_from_env(self) -> AIConfig:
-        """从环境变量加载配置"""
+    def _load_config(self) -> AIConfig:
+        """
+        加载配置，优先从配置文件读取，然后从环境变量补充
+        
+        Returns:
+            AIConfig: 合并后的配置对象
+        """
+        # 先尝试从配置文件读取
+        file_config = self._load_config_from_file()
+        
+        # 从环境变量读取（作为补充或覆盖）
+        env_api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+        env_api_base = os.environ.get("DEEPSEEK_API_BASE", "")
+        env_model = os.environ.get("DEEPSEEK_MODEL", "")
+        env_max_tokens = os.environ.get("DEEPSEEK_MAX_TOKENS", "")
+        env_temperature = os.environ.get("DEEPSEEK_TEMPERATURE", "")
+        
+        # 合并配置：环境变量优先级高于配置文件（api_key除外，配置文件非空时优先）
         return AIConfig(
-            api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
-            api_base=os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1"),
-            model=os.environ.get("DEEPSEEK_MODEL", "deepseek-reasoner"),
-            max_tokens=int(os.environ.get("DEEPSEEK_MAX_TOKENS", "2000")),
-            temperature=float(os.environ.get("DEEPSEEK_TEMPERATURE", "0.7"))
+            provider=file_config.get("provider", "deepseek"),
+            api_key=file_config.get("api_key") or env_api_key,
+            api_base=env_api_base or file_config.get("api_base", "https://api.deepseek.com/v1"),
+            model=env_model or file_config.get("model", "deepseek-reasoner"),
+            max_tokens=int(env_max_tokens) if env_max_tokens else file_config.get("max_tokens", 40000),
+            temperature=float(env_temperature) if env_temperature else file_config.get("temperature", 0.7),
+            timeout=file_config.get("timeout", 60),
+            max_retries=file_config.get("max_retries", 3),
+            retry_delay=file_config.get("retry_delay", 2)
         )
+    
+    def _load_config_from_file(self) -> Dict[str, Any]:
+        """
+        从配置文件加载AI配置
+        
+        Returns:
+            dict: AI配置字典，如果文件不存在或无ai节则返回空字典
+        """
+        try:
+            if self.config_path.exists():
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    ai_config = config.get("ai", {})
+                    if ai_config:
+                        self.logger.debug(f"从配置文件加载AI配置: {self.config_path}")
+                    return ai_config
+        except Exception as e:
+            self.logger.warning(f"读取配置文件失败: {e}")
+        return {}
     
     def generate_code(self, guidance: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
