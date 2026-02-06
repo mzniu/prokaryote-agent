@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 # 默认配置文件路径
 DEFAULT_CONFIG_PATH = Path(__file__).parent / "daemon_config.json"
+DEFAULT_SECRETS_PATH = Path(__file__).parent / "secrets.json"
 
 
 @dataclass
@@ -71,11 +72,19 @@ class AIAdapter:
         """
         加载配置，优先从配置文件读取，然后从环境变量补充
         
+        配置优先级（api_key）：
+        1. secrets.json 文件
+        2. 环境变量 DEEPSEEK_API_KEY
+        
         Returns:
             AIConfig: 合并后的配置对象
         """
         # 先尝试从配置文件读取
         file_config = self._load_config_from_file()
+        
+        # 从 secrets 文件读取 API Key
+        secrets = self._load_secrets(file_config.get("secrets_file"))
+        secrets_api_key = secrets.get("deepseek_api_key", "")
         
         # 从环境变量读取（作为补充或覆盖）
         env_api_key = os.environ.get("DEEPSEEK_API_KEY", "")
@@ -84,10 +93,10 @@ class AIAdapter:
         env_max_tokens = os.environ.get("DEEPSEEK_MAX_TOKENS", "")
         env_temperature = os.environ.get("DEEPSEEK_TEMPERATURE", "")
         
-        # 合并配置：环境变量优先级高于配置文件（api_key除外，配置文件非空时优先）
+        # 合并配置：secrets文件优先，然后环境变量
         return AIConfig(
             provider=file_config.get("provider", "deepseek"),
-            api_key=file_config.get("api_key") or env_api_key,
+            api_key=secrets_api_key or env_api_key,
             api_base=env_api_base or file_config.get("api_base", "https://api.deepseek.com/v1"),
             model=env_model or file_config.get("model", "deepseek-reasoner"),
             max_tokens=int(env_max_tokens) if env_max_tokens else file_config.get("max_tokens", 40000),
@@ -96,6 +105,31 @@ class AIAdapter:
             max_retries=file_config.get("max_retries", 3),
             retry_delay=file_config.get("retry_delay", 2)
         )
+    
+    def _load_secrets(self, secrets_file: Optional[str] = None) -> Dict[str, Any]:
+        """
+        从 secrets 文件加载敏感配置（如 API Key）
+        
+        Args:
+            secrets_file: secrets 文件名，默认为 secrets.json
+            
+        Returns:
+            dict: secrets 字典
+        """
+        if secrets_file:
+            secrets_path = self.config_path.parent / secrets_file
+        else:
+            secrets_path = DEFAULT_SECRETS_PATH
+        
+        try:
+            if secrets_path.exists():
+                with open(secrets_path, 'r', encoding='utf-8') as f:
+                    secrets = json.load(f)
+                    self.logger.debug(f"从 secrets 文件加载配置: {secrets_path}")
+                    return secrets
+        except Exception as e:
+            self.logger.debug(f"读取 secrets 文件失败: {e}")
+        return {}
     
     def _load_config_from_file(self) -> Dict[str, Any]:
         """

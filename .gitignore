@@ -39,6 +39,11 @@ prokaryote_agent/backup/module_backup/
 !prokaryote_agent/backup/__init__.py
 !prokaryote_agent/config/config.json
 
+# Secrets (NEVER commit these!)
+prokaryote_agent/secrets.json
+.env
+*.secrets.json
+
 # OS
 .DS_Store
 Thumbs.db

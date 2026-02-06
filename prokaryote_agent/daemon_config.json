@@ -114,7 +114,7 @@
 
   "ai": {
     "provider": "deepseek",
-    "api_key": "",
+    "secrets_file": "secrets.json",
     "api_base": "https://api.deepseek.com/v1",
     "model": "deepseek-reasoner",
     "max_tokens": 40000,
@@ -122,6 +122,6 @@
     "timeout": 60,
     "max_retries": 3,
     "retry_delay": 2,
-    "description": "AI服务配置，api_key为空时从环境变量DEEPSEEK_API_KEY读取"
+    "description": "AI服务配置，api_key从secrets.json或环境变量DEEPSEEK_API_KEY读取"
   }
 }
