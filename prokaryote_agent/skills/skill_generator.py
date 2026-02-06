@@ -54,10 +54,10 @@ from typing import Dict, Any, List
 class {class_name}(Skill):
     """
     {skill_name}
-    
+
     {description}
     """
-    
+
     def __init__(self, metadata: SkillMetadata = None):
         if metadata is None:
             metadata = SkillMetadata(
@@ -68,24 +68,24 @@ class {class_name}(Skill):
                 description="{description}"
             )
         super().__init__(metadata)
-    
+
     def get_capabilities(self) -> List[str]:
         """返回技能能力列表"""
         return {capabilities_list}
-    
+
     def validate_input(self, **kwargs) -> bool:
         """验证输入参数"""
         {validate_code}
-    
+
     def execute(self, **kwargs) -> Dict[str, Any]:
         """
         执行技能
-        
+
         {execute_docstring}
         """
         try:
             {execute_code}
-            
+
             return {{
                 'success': True,
                 'result': result
@@ -95,7 +95,7 @@ class {class_name}(Skill):
                 'success': False,
                 'error': str(e)
             }}
-    
+
     def get_usage_examples(self) -> List[Dict[str, Any]]:
         """返回使用示例"""
         return {examples}
@@ -105,21 +105,21 @@ class {class_name}(Skill):
 class SkillGenerator:
     """
     技能生成器 - 负责生成技能代码
-    
+
     学习过程：
     1. 基础学习 (level 1-5): 生成基本框架
     2. 进阶学习 (level 6-15): 添加更多功能
     3. 精通 (level 16+): 优化和高级特性
-    
+
     代码生成：
     - 优先使用核心酶（SkillPipeline）进行代码生成
     - 核心酶不可用时，使用内置模板方案
     """
-    
+
     def __init__(self, library: SkillLibrary = None, use_core_enzymes: bool = True):
         """
         初始化技能生成器
-        
+
         Args:
             library: 技能库实例
             use_core_enzymes: 是否使用核心酶生成代码（默认True）
@@ -128,23 +128,23 @@ class SkillGenerator:
         self.logger = logging.getLogger(__name__)
         self.use_core_enzymes = use_core_enzymes and CORE_ENZYMES_AVAILABLE
         self._pipeline = None
-        
+
         if self.use_core_enzymes:
             self.logger.info("技能生成器: 使用核心酶模式")
         else:
             self.logger.info("技能生成器: 使用模板模式")
-    
+
     @property
     def pipeline(self) -> Optional['SkillPipeline']:
         """获取技能生成管线（延迟加载）"""
         if self._pipeline is None and self.use_core_enzymes:
             self._pipeline = get_skill_pipeline()
         return self._pipeline
-    
+
     def learn_skill(self, skill_definition: Dict[str, Any]) -> Dict[str, Any]:
         """
         学习一个新技能
-        
+
         Args:
             skill_definition: 技能定义
                 {
@@ -156,7 +156,7 @@ class SkillGenerator:
                     'capabilities': ['检索法条', '查找判例'],
                     'prerequisites': []
                 }
-        
+
         Returns:
             {
                 'success': bool,
@@ -167,13 +167,13 @@ class SkillGenerator:
         """
         skill_id = skill_definition['id']
         self.logger.info(f"开始学习技能: {skill_id}")
-        
+
         try:
             # 1. 生成技能代码（优先使用核心酶）
             if self.use_core_enzymes and self.pipeline:
                 self.logger.info(f"使用核心酶生成代码: {skill_id}")
                 gen_result = self.pipeline.generate(skill_definition)
-                
+
                 if gen_result['success']:
                     code = gen_result['code']
                     self.logger.info(
@@ -190,7 +190,7 @@ class SkillGenerator:
             else:
                 # 使用模板方案
                 code = self._generate_skill_code(skill_definition)
-            
+
             # 2. 验证代码（语法检查）
             if not self._validate_code(code):
                 return {
@@ -198,10 +198,10 @@ class SkillGenerator:
                     'skill_id': skill_id,
                     'error': '生成的代码语法错误'
                 }
-            
+
             # 3. 保存代码到技能库
             self.library.save_skill_code(skill_id, code)
-            
+
             # 4. 加载并注册技能
             skill = self.library.load_skill(skill_id)
             if skill:
@@ -210,7 +210,7 @@ class SkillGenerator:
                 skill.metadata.level = 0
                 self.library.register_skill(skill)
                 self.logger.info(f"技能代码生成成功: {skill_id} (需要训练升级)")
-                
+
                 return {
                     'success': True,
                     'skill_id': skill_id,
@@ -223,7 +223,7 @@ class SkillGenerator:
                     'skill_id': skill_id,
                     'error': '技能加载失败'
                 }
-                
+
         except Exception as e:
             self.logger.error(f"技能学习失败: {e}")
             return {
@@ -231,22 +231,22 @@ class SkillGenerator:
                 'skill_id': skill_id,
                 'error': str(e)
             }
-    
+
     def upgrade_skill(self, skill_id: str, target_level: int) -> Dict[str, Any]:
         """
         升级技能 - 通过执行训练任务来提升
-        
+
         升级过程：
         1. 获取当前等级的训练任务（难度递进）
         2. 执行训练任务（实际调用技能）
         3. 评估训练结果并记录知识固化统计
         4. 如果通过，提升等级
         5. 在关键等级点（5/10/15/20）触发代码进化
-        
+
         Args:
             skill_id: 技能ID
             target_level: 目标等级
-        
+
         Returns:
             升级结果，包含知识统计和能力提升信息
         """
@@ -256,22 +256,22 @@ class SkillGenerator:
                 'success': False,
                 'error': f'技能不存在: {skill_id}'
             }
-        
+
         current_level = skill.metadata.level
         if target_level <= current_level:
             return {
                 'success': False,
                 'error': f'目标等级 {target_level} 不高于当前等级 {current_level}'
             }
-        
+
         # 获取训练任务（根据等级调整难度）
         training_task = self._get_training_task(skill_id, skill.metadata.domain, current_level)
-        
+
         self.logger.info(f"执行训练任务: {training_task['name']}")
-        
+
         # 执行训练（调用技能）
         training_result = self._execute_training(skill, training_task)
-        
+
         if not training_result['passed']:
             return {
                 'success': False,
@@ -279,43 +279,43 @@ class SkillGenerator:
                 'error': f"训练未通过: {training_result.get('reason', '未知原因')}",
                 'training_task': training_task['name']
             }
-        
+
         # 训练通过，获取增强
         enhancements = self._get_level_enhancements(
-            skill.metadata.tier, 
-            current_level, 
+            skill.metadata.tier,
+            current_level,
             target_level
         )
-        
+
         # 升级技能
         for _ in range(target_level - current_level):
             skill.upgrade()
-        
+
         # 记录训练经验（含知识贡献加成）
         skill.metadata.total_executions += 1
         skill.metadata.successful_executions += 1
-        
+
         # 知识固化加成：存储的知识越多，熟练度提升越快
         knowledge_stored = training_result.get('knowledge_stored', 0)
         base_gain = 0.05
         knowledge_bonus = min(0.05, knowledge_stored * 0.01)  # 每条知识+1%，最多+5%
         skill.metadata.proficiency = min(1.0, skill.metadata.proficiency + base_gain + knowledge_bonus)
-        
+
         # 检查是否需要代码进化（关键等级点）
         code_evolved = False
         if target_level in [5, 10, 15, 20] and self.use_core_enzymes:
             code_evolved = self._evolve_skill_code(skill, target_level, enhancements)
-        
+
         # 更新注册表
         self.library.registry[skill_id] = skill.metadata
         self.library._save_registry()
-        
+
         self.logger.info(f"技能升级: {skill_id} Lv.{current_level} -> Lv.{target_level}")
         if knowledge_stored > 0:
             self.logger.info(f"  知识固化: {knowledge_stored} 条新知识")
         if code_evolved:
             self.logger.info(f"  代码进化: 技能能力已增强")
-        
+
         return {
             'success': True,
             'skill_id': skill_id,
@@ -328,25 +328,25 @@ class SkillGenerator:
             'code_evolved': code_evolved,
             'proficiency': skill.metadata.proficiency
         }
-    
-    def _evolve_skill_code(self, skill: Skill, new_level: int, 
+
+    def _evolve_skill_code(self, skill: Skill, new_level: int,
                            enhancements: List[str]) -> bool:
         """
         在关键等级点进化技能代码
-        
+
         通过核心酶重新生成增强版技能代码
-        
+
         Args:
             skill: 技能实例
             new_level: 新等级
             enhancements: 本次升级获得的增强
-            
+
         Returns:
             是否成功进化
         """
         if not self.pipeline:
             return False
-        
+
         try:
             # 构建增强规格
             enhanced_spec = {
@@ -361,37 +361,37 @@ class SkillGenerator:
                 # 根据等级添加特定能力要求
                 'requirements': self._get_level_requirements(new_level)
             }
-            
+
             # 调用核心酶重新生成代码
             result = self.pipeline.generate(enhanced_spec)
-            
+
             if result.get('success'):
                 # 保存新版本
                 code = result['code']
                 version = f"1.0.{new_level}"
-                
+
                 # 保存到版本目录
                 self._save_skill_version(skill.metadata.skill_id, code, version)
-                
+
                 # 更新当前技能文件
                 skill_path = self.library.library_path / f"{skill.metadata.skill_id}.py"
                 skill_path.write_text(code, encoding='utf-8')
-                
+
                 skill.metadata.version = version
                 self.logger.info(f"代码进化成功: {skill.metadata.skill_id} -> v{version}")
                 return True
             else:
                 self.logger.warning(f"代码进化失败: {result.get('error')}")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"代码进化异常: {e}")
             return False
-    
+
     def _get_level_requirements(self, level: int) -> List[str]:
         """获取等级对应的能力要求"""
         requirements = []
-        
+
         if level >= 5:
             requirements.append("支持批量处理多个输入")
         if level >= 10:
@@ -404,22 +404,22 @@ class SkillGenerator:
             requirements.append("自适应处理策略")
             requirements.append("支持增量更新")
             requirements.append("性能优化")
-        
+
         return requirements
-    
+
     def _save_skill_version(self, skill_id: str, code: str, version: str):
         """保存技能代码版本"""
         versions_dir = self.library.library_path / ".versions"
         versions_dir.mkdir(exist_ok=True)
-        
+
         version_file = versions_dir / f"{skill_id}_v{version}.py"
         version_file.write_text(code, encoding='utf-8')
         self.logger.debug(f"版本已保存: {version_file}")
-    
+
     def _get_training_task(self, skill_id: str, domain: str, level: int) -> Dict[str, Any]:
         """
         获取训练任务
-        
+
         根据技能和等级生成适当难度的训练任务
         """
         # 法律领域训练任务
@@ -429,10 +429,10 @@ class SkillGenerator:
             return self._get_software_training_task(skill_id, level)
         else:
             return self._get_generic_training_task(skill_id, level)
-    
+
     def _get_legal_training_task(self, skill_id: str, level: int) -> Dict[str, Any]:
         """获取法律领域训练任务"""
-        
+
         if 'research' in skill_id:
             # 法律检索训练任务
             tasks = [
@@ -446,7 +446,7 @@ class SkillGenerator:
             task['type'] = 'research'
             task['difficulty'] = min(level // 5 + 1, 5)
             return task
-            
+
         elif 'drafting' in skill_id:
             tasks = [
                 {'name': '起草劳动合同', 'doc_type': '劳动合同', 'sections': ['甲乙方', '工作内容', '薪酬']},
@@ -457,7 +457,7 @@ class SkillGenerator:
             task['type'] = 'drafting'
             task['difficulty'] = min(level // 5 + 1, 5)
             return task
-            
+
         elif 'analysis' in skill_id:
             tasks = [
                 {'name': '分析合同纠纷案例', 'case_type': '合同纠纷', 'focus': '违约认定'},
@@ -468,10 +468,10 @@ class SkillGenerator:
             task['type'] = 'analysis'
             task['difficulty'] = min(level // 5 + 1, 5)
             return task
-        
+
         else:
             return self._get_generic_training_task(skill_id, level)
-    
+
     def _get_software_training_task(self, skill_id: str, level: int) -> Dict[str, Any]:
         """获取软件开发领域训练任务"""
         tasks = [
@@ -483,7 +483,7 @@ class SkillGenerator:
         task['type'] = 'code_review'
         task['difficulty'] = min(level // 5 + 1, 5)
         return task
-    
+
     def _get_generic_training_task(self, skill_id: str, level: int) -> Dict[str, Any]:
         """获取通用训练任务"""
         return {
@@ -492,15 +492,15 @@ class SkillGenerator:
             'difficulty': min(level // 5 + 1, 5),
             'description': f'完成{skill_id}技能的第{level + 1}级训练'
         }
-    
+
     def _execute_training(self, skill: Skill, task: Dict[str, Any]) -> Dict[str, Any]:
         """
         执行训练任务
-        
+
         实际调用技能并评估结果
         """
         task_type = task.get('type', 'generic')
-        
+
         try:
             if task_type == 'research':
                 # 执行检索训练
@@ -508,16 +508,16 @@ class SkillGenerator:
                     query=task.get('query', ''),
                     sources=['法律法规', '司法解释', '判例']
                 )
-                
+
                 if result.get('success'):
                     res = result.get('result', {})
                     found_count = res.get('total_found', 0)
                     expected = task.get('expected_count', 1)
                     passed = found_count >= expected
-                    
+
                     # 提取知识固化统计
                     knowledge_stored = res.get('stored_to_kb', 0)
-                    
+
                     return {
                         'passed': passed,
                         'found': found_count,
@@ -528,14 +528,14 @@ class SkillGenerator:
                     }
                 else:
                     return {'passed': False, 'reason': result.get('error', '执行失败')}
-                    
+
             elif task_type == 'drafting':
                 # 执行文书起草训练
                 result = skill.execute(
                     doc_type=task.get('doc_type', ''),
                     sections=task.get('sections', [])
                 )
-                
+
                 if result.get('success'):
                     content = result.get('result', {}).get('content', '')
                     passed = len(content) > 10  # 基本检查
@@ -546,23 +546,23 @@ class SkillGenerator:
                     }
                 else:
                     return {'passed': False, 'reason': result.get('error', '执行失败')}
-                    
+
             elif task_type == 'analysis':
                 # 执行案例分析训练
                 result = skill.execute(
                     case_text=f"这是一个{task.get('case_type', '')}案例，需要分析{task.get('focus', '')}",
                     analysis_type='comprehensive'
                 )
-                
+
                 if result.get('success'):
                     analysis = result.get('result', {})
                     has_summary = 'case_summary' in analysis or 'analysis' in analysis
                     passed = has_summary
-                    
+
                     # 提取知识固化统计
                     knowledge_stats = analysis.get('knowledge_stats', {})
                     knowledge_stored = knowledge_stats.get('stored', 0)
-                    
+
                     return {
                         'passed': passed,
                         'has_analysis': has_summary,
@@ -572,7 +572,7 @@ class SkillGenerator:
                     }
                 else:
                     return {'passed': False, 'reason': result.get('error', '执行失败')}
-            
+
             else:
                 # 通用训练：直接通过（模拟）
                 # 根据难度有一定概率失败
@@ -584,11 +584,11 @@ class SkillGenerator:
                     'difficulty': difficulty,
                     'reason': '训练完成' if passed else '训练失败，需要更多练习'
                 }
-                
+
         except Exception as e:
             self.logger.error(f"训练执行异常: {e}")
             return {'passed': False, 'reason': str(e)}
-    
+
     def _generate_skill_code(self, definition: Dict[str, Any]) -> str:
         """生成技能代码"""
         skill_id = definition['id']
@@ -597,21 +597,21 @@ class SkillGenerator:
         domain = definition.get('domain', 'general')
         description = definition.get('description', '')
         capabilities = definition.get('capabilities', [])
-        
+
         # 转换为类名
         class_name = ''.join(word.capitalize() for word in skill_id.split('_'))
-        
+
         # 根据领域生成具体实现
         execute_code, validate_code, execute_docstring = self._generate_domain_code(
             domain, skill_id, skill_name, capabilities
         )
-        
+
         # 格式化能力列表
         capabilities_str = '\n'.join(f"- {cap}" for cap in capabilities)
-        
+
         # 生成示例
         examples = self._generate_examples(domain, skill_id)
-        
+
         code = SKILL_TEMPLATE.format(
             skill_name=skill_name,
             description=description,
@@ -627,33 +627,33 @@ class SkillGenerator:
             execute_docstring=execute_docstring,
             examples=repr(examples)
         )
-        
+
         return code
-    
-    def _generate_domain_code(self, domain: str, skill_id: str, 
+
+    def _generate_domain_code(self, domain: str, skill_id: str,
                                skill_name: str, capabilities: List[str]) -> tuple:
         """根据领域生成具体代码"""
-        
+
         if domain == 'legal':
             return self._generate_legal_skill_code(skill_id, skill_name, capabilities)
         elif domain == 'software_dev':
             return self._generate_software_skill_code(skill_id, skill_name, capabilities)
         else:
             return self._generate_generic_skill_code(skill_id, skill_name, capabilities)
-    
-    def _generate_legal_skill_code(self, skill_id: str, skill_name: str, 
+
+    def _generate_legal_skill_code(self, skill_id: str, skill_name: str,
                                     capabilities: List[str]) -> tuple:
-        """生成法律领域技能代码 - 使用真实网络搜索 + 知识库存储"""
-        
+        """生成法律领域技能代码 - 使用深度网络搜索 + 知识库存储"""
+
         if 'research' in skill_id or '检索' in skill_name:
             execute_code = '''
-            from prokaryote_agent.skills.web_tools import search_legal, web_search
+            from prokaryote_agent.skills.web_tools import search_legal_deep, deep_search
             from prokaryote_agent.knowledge import store_knowledge, search_knowledge
-            
+
             query = kwargs.get('query', '')
             sources = kwargs.get('sources', ['法律法规', '司法解释', '判例'])
             use_cache = kwargs.get('use_cache', True)
-            
+
             # 1. 先查本地知识库
             if use_cache:
                 local_results = search_knowledge(query, domain="legal", limit=5)
@@ -661,56 +661,55 @@ class SkillGenerator:
                     result = {
                         'query': query,
                         'sources': sources,
-                        'results': [{'title': r['title'], 'source': 'knowledge_base', 
-                                    'snippet': r.get('snippet', '')} for r in local_results],
+                        'results': [{'title': r['title'], 'source': 'knowledge_base',
+                                    'content': r.get('content', r.get('snippet', ''))} for r in local_results],
                         'total_found': len(local_results),
-                        'from_cache': True
+                        'from_cache': True,
+                        'stored_to_kb': 0
                     }
                     return {'success': True, 'result': result}
-            
-            # 2. 本地知识不足，联网搜索
+
+            # 2. 本地知识不足，深度联网搜索
             all_results = []
-            
+
             # 根据 sources 决定搜索类别
-            categories = []
+            category = 'all'
             for src in sources:
                 if '法规' in src or '法律' in src:
-                    categories.append('laws')
-                if '解释' in src:
-                    categories.append('interpretations')
+                    category = 'laws'
+                    break
                 if '判例' in src or '案例' in src:
-                    categories.append('cases')
-            
-            if not categories:
-                categories = ['all']
-            
-            # 执行搜索
-            for category in set(categories):
-                results = search_legal(query, category)
-                all_results.extend(results)
-            
-            # 如果法律专业搜索没结果，用通用搜索
-            if not all_results:
-                all_results = web_search(f"{query} 法律", max_results=5)
-            
-            # 3. 存储搜索结果到知识库
-            for r in all_results[:5]:  # 只存储前5条
-                store_knowledge(
-                    title=r.get('title', query),
-                    content=r.get('snippet', r.get('title', '')),
-                    domain="legal",
-                    category=categories[0] if categories else "general",
-                    source_url=r.get('url', ''),
-                    acquired_by=self.metadata.skill_id
-                )
-            
+                    category = 'cases'
+                    break
+
+            # 执行深度搜索（会抓取网页内容）
+            all_results = search_legal_deep(query, category=category, max_results=3)
+
+            # 3. 存储搜索结果到知识库（有内容的才存）
+            stored_count = 0
+            for r in all_results[:5]:
+                content = r.get('content', '')
+                if content and len(content) > 100:  # 只存有内容的
+                    try:
+                        store_knowledge(
+                            title=r.get('title', query),
+                            content=content,
+                            domain="legal",
+                            category=r.get('category', 'general'),
+                            source_url=r.get('url', ''),
+                            acquired_by=self.metadata.skill_id
+                        )
+                        stored_count += 1
+                    except Exception:
+                        pass
+
             result = {
                 'query': query,
                 'sources': sources,
                 'results': all_results,
                 'total_found': len(all_results),
                 'from_cache': False,
-                'stored_to_kb': min(len(all_results), 5)
+                'stored_to_kb': stored_count
             }'''
             validate_code = '''
         query = kwargs.get('query')
@@ -720,23 +719,23 @@ class SkillGenerator:
             query: 检索关键词
             sources: 检索源列表 ['法律法规', '司法解释', '判例']
             use_cache: 是否优先使用本地知识库 (默认True)
-        
+
         Returns:
-            检索结果，包含标题、URL、来源等
+            检索结果，包含标题、内容、URL等
             from_cache: 是否来自知识库
             stored_to_kb: 新存储到知识库的数量'''
-        
+
         elif 'drafting' in skill_id or '文书' in skill_name or '起草' in skill_name:
             execute_code = '''
             from prokaryote_agent.skills.web_tools import web_search, fetch_webpage
-            
+
             doc_type = kwargs.get('doc_type', '合同')
             template = kwargs.get('template', None)
             data = kwargs.get('data', {})
-            
+
             # 搜索相关模板和范例
             search_results = web_search(f"{doc_type} 模板 范本", max_results=3)
-            
+
             # 提取参考信息
             references = []
             for r in search_results[:2]:
@@ -744,10 +743,10 @@ class SkillGenerator:
                     'title': r.get('title', ''),
                     'url': r.get('url', '')
                 })
-            
+
             # 生成文书框架（基于搜索到的模板参考）
             sections = self._get_document_sections(doc_type)
-            
+
             result = {
                 'doc_type': doc_type,
                 'content': f'【{doc_type}】\\n\\n' + '\\n'.join(f'{i+1}. {s}' for i, s in enumerate(sections)),
@@ -755,7 +754,7 @@ class SkillGenerator:
                 'references': references,
                 'warnings': ['请根据实际情况修改内容', '建议咨询专业律师审核']
             }
-    
+
     def _get_document_sections(self, doc_type):
         """获取文书章节"""
         templates = {
@@ -773,44 +772,44 @@ class SkillGenerator:
             doc_type: 文书类型（劳动合同、保密协议等）
             template: 模板（可选）
             data: 填充数据
-        
+
         Returns:
             文书内容和参考资料'''
-        
+
         elif 'analysis' in skill_id or '分析' in skill_name:
             execute_code = '''
-            from prokaryote_agent.skills.web_tools import web_search
+            from prokaryote_agent.skills.web_tools import deep_search
             from prokaryote_agent.knowledge import smart_search, store_knowledge
             import re
-            
+
             case_text = kwargs.get('case_text', '')
             analysis_type = kwargs.get('analysis_type', 'comprehensive')
-            
+
             # 1. 提取关键词
             legal_terms = ['合同', '侵权', '违约', '赔偿', '责任', '权益', '纠纷', '诉讼', '解除', '争议']
             keywords = [t for t in legal_terms if t in case_text]
             if not keywords:
                 words = re.findall(r'[\\u4e00-\\u9fa5]{2,4}', case_text)
                 keywords = list(set(words))[:5]
-            
-            # 2. 智能搜索（优先本地知识库，不足时网络搜索并固化）
+
+            # 2. 智能搜索（优先本地知识库，不足时深度网络搜索并固化）
             knowledge_stored = 0
             legal_context = []
-            
-            for kw in keywords[:3]:
+
+            for kw in keywords[:2]:  # 减少关键词数量，增加每个的深度
                 try:
                     search_result = smart_search(
                         query=f"{kw} 法律 规定",
                         domain="legal",
                         min_local=2,
-                        web_search_func=lambda q, max_results: web_search(q, max_results=max_results),
+                        web_search_func=lambda q, max_results: deep_search(q, max_results=max_results, fetch_content=True),
                         acquired_by=self.metadata.skill_id
                     )
                     legal_context.extend(search_result.get('all_results', []))
                     knowledge_stored += search_result.get('knowledge_stored', 0)
                 except Exception:
                     pass
-            
+
             # 3. 生成分析结果
             result = {
                 'case_summary': case_text[:200] + '...' if len(case_text) > 200 else case_text,
@@ -832,37 +831,37 @@ class SkillGenerator:
         Args:
             case_text: 案例文本
             analysis_type: 分析类型
-        
+
         Returns:
             案例分析结果，包含相关法律参考
             knowledge_stats: 知识库统计（存储数、本地命中、网络获取）'''
-        
+
         elif 'contract' in skill_id or '合同' in skill_name:
             execute_code = '''
             from prokaryote_agent.skills.web_tools import web_search
-            
+
             contract_text = kwargs.get('contract_text', '')
             check_items = kwargs.get('check_items', ['条款完整性', '风险点', '合规性'])
-            
+
             # 搜索合同审查要点
             review_points = web_search("合同审查要点 风险点", max_results=3)
-            
+
             # 分析合同（简化版本）
             issues = []
             suggestions = []
-            
+
             # 检查常见问题
             if '违约' not in contract_text:
                 issues.append({'type': '缺失条款', 'description': '未发现违约责任条款'})
                 suggestions.append('建议增加违约责任条款')
-            
+
             if '争议' not in contract_text and '仲裁' not in contract_text:
                 issues.append({'type': '缺失条款', 'description': '未发现争议解决条款'})
                 suggestions.append('建议增加争议解决方式条款')
-            
+
             # 搜索相关法规参考
             legal_refs = web_search("合同法 必备条款", max_results=2)
-            
+
             result = {
                 'overall_rating': 'B' if len(issues) <= 2 else 'C',
                 'risk_level': '低' if len(issues) == 0 else '中等' if len(issues) <= 2 else '高',
@@ -879,34 +878,34 @@ class SkillGenerator:
         Args:
             contract_text: 合同文本
             check_items: 检查项目
-        
+
         Returns:
             合同审查结果，包含风险评估和改进建议'''
-        
+
         else:
             # 通用法律技能
             return self._generate_generic_skill_code(skill_id, skill_name, capabilities)
-        
+
         return execute_code, validate_code, docstring
-    
+
     def _generate_software_skill_code(self, skill_id: str, skill_name: str,
                                        capabilities: List[str]) -> tuple:
         """生成软件开发领域技能代码 - 使用真实网络搜索"""
-        
+
         if 'code_review' in skill_id or '代码审查' in skill_name:
             execute_code = '''
             from prokaryote_agent.skills.web_tools import web_search
-            
+
             code = kwargs.get('code', '')
             language = kwargs.get('language', 'python')
-            
+
             # 搜索代码审查最佳实践
             best_practices = web_search(f"{language} code review best practices", max_results=3)
-            
+
             # 基本代码检查
             issues = []
             suggestions = []
-            
+
             lines = code.split('\\n')
             for i, line in enumerate(lines, 1):
                 # 检查行长度
@@ -915,10 +914,10 @@ class SkillGenerator:
                 # 检查 TODO 注释
                 if 'TODO' in line or 'FIXME' in line:
                     issues.append({'line': i, 'type': 'todo', 'message': f'发现待处理标记: {line.strip()}'})
-            
+
             # 计算质量分
             quality_score = max(0.5, 1.0 - len(issues) * 0.1)
-            
+
             result = {
                 'language': language,
                 'issues': issues,
@@ -934,20 +933,20 @@ class SkillGenerator:
         Args:
             code: 待审查的代码
             language: 编程语言
-        
+
         Returns:
             代码审查结果，包含问题列表和最佳实践参考'''
-        
+
         elif 'debug' in skill_id or '调试' in skill_name:
             execute_code = '''
             from prokaryote_agent.skills.web_tools import web_search
             from prokaryote_agent.knowledge import store_knowledge, search_knowledge
-            
+
             error_message = kwargs.get('error', '')
             code_context = kwargs.get('code', '')
             language = kwargs.get('language', 'python')
             use_cache = kwargs.get('use_cache', True)
-            
+
             # 1. 先查本地知识库
             if use_cache and error_message:
                 # 提取错误类型作为搜索词
@@ -964,14 +963,14 @@ class SkillGenerator:
                         'from_cache': True
                     }
                     return {'success': True, 'result': result}
-            
+
             # 2. 联网搜索
             search_query = f"{language} {error_message[:100]}"
             solutions = web_search(search_query, max_results=5)
-            
+
             # 也搜索 Stack Overflow
             so_results = web_search(f"site:stackoverflow.com {error_message[:80]}", max_results=3)
-            
+
             # 3. 存储有用的解决方案到知识库
             all_solutions = solutions + so_results
             for s in all_solutions[:3]:
@@ -983,7 +982,7 @@ class SkillGenerator:
                     source_url=s.get('url', ''),
                     acquired_by=self.metadata.skill_id
                 )
-            
+
             result = {
                 'error': error_message,
                 'language': language,
@@ -1002,21 +1001,21 @@ class SkillGenerator:
             code: 相关代码上下文（可选）
             language: 编程语言
             use_cache: 是否优先使用本地知识库 (默认True)
-        
+
         Returns:
             调试建议和网络搜索到的解决方案'''
-        
+
         elif 'api' in skill_id or 'API' in skill_name:
             execute_code = '''
             from prokaryote_agent.skills.web_tools import web_search, fetch_webpage
-            
+
             api_name = kwargs.get('api_name', '')
             operation = kwargs.get('operation', 'usage')  # usage, example, docs
-            
+
             # 搜索 API 文档和示例
             doc_results = web_search(f"{api_name} API documentation", max_results=3)
             example_results = web_search(f"{api_name} API example code", max_results=3)
-            
+
             result = {
                 'api_name': api_name,
                 'operation': operation,
@@ -1031,26 +1030,26 @@ class SkillGenerator:
         Args:
             api_name: API 名称
             operation: 操作类型（usage/example/docs）
-        
+
         Returns:
             API 文档和示例链接'''
-        
+
         elif 'learn' in skill_id or '学习' in skill_name:
             execute_code = '''
             from prokaryote_agent.skills.web_tools import web_search, search_wikipedia
-            
+
             topic = kwargs.get('topic', '')
             level = kwargs.get('level', 'beginner')  # beginner, intermediate, advanced
-            
+
             # 搜索教程和学习资源
             tutorial_results = web_search(f"{topic} tutorial {level}", max_results=5)
-            
+
             # 搜索概念解释
             wiki_results = search_wikipedia(topic)
-            
+
             # 搜索官方文档
             doc_results = web_search(f"{topic} official documentation", max_results=2)
-            
+
             result = {
                 'topic': topic,
                 'level': level,
@@ -1066,34 +1065,34 @@ class SkillGenerator:
         Args:
             topic: 学习主题
             level: 难度级别（beginner/intermediate/advanced）
-        
+
         Returns:
             学习资源链接和教程'''
-        
+
         else:
             return self._generate_generic_skill_code(skill_id, skill_name, capabilities)
-        
+
         return execute_code, validate_code, docstring
-    
+
     def _generate_generic_skill_code(self, skill_id: str, skill_name: str,
                                       capabilities: List[str]) -> tuple:
         """生成通用技能代码 - 使用网络搜索作为基础能力"""
-        
+
         execute_code = '''
             from prokaryote_agent.skills.web_tools import web_search, search_wikipedia
-            
+
             # 获取输入
             input_data = kwargs.get('input', {})
             query = kwargs.get('query', '')
-            
+
             # 如果有查询，执行网络搜索
             search_results = []
             wiki_results = []
-            
+
             if query:
                 search_results = web_search(query, max_results=5)
                 wiki_results = search_wikipedia(query)
-            
+
             result = {
                 'skill': "''' + skill_name + '''",
                 'input': input_data,
@@ -1103,24 +1102,24 @@ class SkillGenerator:
                 'output': '执行完成' if search_results or wiki_results else '未找到相关信息',
                 'capabilities_used': ''' + repr(capabilities) + '''
             }'''
-        
+
         validate_code = '''
         # 基本验证
         return True'''
-        
+
         docstring = '''
         Args:
             input: 输入数据
             query: 搜索查询（可选）
-        
+
         Returns:
             执行结果，包含网络搜索结果'''
-        
+
         return execute_code, validate_code, docstring
-    
+
     def _generate_examples(self, domain: str, skill_id: str) -> List[Dict[str, Any]]:
         """生成使用示例"""
-        
+
         if domain == 'legal':
             if 'research' in skill_id:
                 return [
@@ -1132,11 +1131,11 @@ class SkillGenerator:
                     {'input': {'doc_type': '劳动合同'}, 'description': '起草劳动合同'},
                     {'input': {'doc_type': '保密协议'}, 'description': '起草保密协议'}
                 ]
-        
+
         return [
             {'input': {}, 'description': '基本使用示例'}
         ]
-    
+
     def _validate_code(self, code: str) -> bool:
         """验证代码语法"""
         try:
@@ -1145,12 +1144,12 @@ class SkillGenerator:
         except SyntaxError as e:
             self.logger.error(f"代码语法错误: {e}")
             return False
-    
-    def _get_level_enhancements(self, tier: str, from_level: int, 
+
+    def _get_level_enhancements(self, tier: str, from_level: int,
                                  to_level: int) -> List[str]:
         """获取等级提升带来的增强"""
         enhancements = []
-        
+
         for level in range(from_level + 1, to_level + 1):
             if level == 5:
                 enhancements.append("解锁批量处理能力")
@@ -1160,5 +1159,5 @@ class SkillGenerator:
                 enhancements.append("解锁高级分析能力")
             elif level == 20:
                 enhancements.append("达到层级上限，可解锁进阶技能")
-        
+
         return enhancements
