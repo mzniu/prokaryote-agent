@@ -48,7 +48,8 @@ SKILL_TEMPLATE = '''"""
 """
 
 from prokaryote_agent.skills.skill_base import Skill, SkillMetadata
-from typing import Dict, Any, List
+from prokaryote_agent.skills.skill_context import SkillContext
+from typing import Dict, Any, List, Optional
 
 
 class {class_name}(Skill):
@@ -77,14 +78,20 @@ class {class_name}(Skill):
         """验证输入参数"""
         {validate_code}
 
-    def execute(self, **kwargs) -> Dict[str, Any]:
+    def execute(self, context: SkillContext = None, **kwargs) -> Dict[str, Any]:
         """
         执行技能
 
+        Args:
+            context: 技能执行上下文，提供知识库访问、技能互调用、产出物保存
         {execute_docstring}
         """
         try:
             {execute_code}
+
+            # 保存产出物到Knowledge（如果有context）
+            if context and result:
+                self._save_output(context, result)
 
             return {{
                 'success': True,
@@ -95,6 +102,10 @@ class {class_name}(Skill):
                 'success': False,
                 'error': str(e)
             }}
+
+    def _save_output(self, context: SkillContext, result: Dict[str, Any]):
+        """保存产出物到Knowledge"""
+        {save_output_code}
 
     def get_usage_examples(self) -> List[Dict[str, Any]]:
         """返回使用示例"""
@@ -498,13 +509,24 @@ class SkillGenerator:
         执行训练任务
 
         实际调用技能并评估结果
+        产出物会通过SkillContext自动保存到Knowledge目录
         """
+        from .skill_context import SkillContext
+        
         task_type = task.get('type', 'generic')
+        
+        # 创建执行上下文
+        context = SkillContext(
+            skill_id=skill.metadata.skill_id,
+            skill_library=self.library,
+            domain=skill.metadata.domain
+        )
 
         try:
             if task_type == 'research':
                 # 执行检索训练
                 result = skill.execute(
+                    context=context,
                     query=task.get('query', ''),
                     sources=['法律法规', '司法解释', '判例']
                 )
@@ -524,7 +546,8 @@ class SkillGenerator:
                         'expected': expected,
                         'reason': f'找到{found_count}条结果' if passed else f'结果不足，期望{expected}条',
                         'knowledge_stored': knowledge_stored,
-                        'from_cache': res.get('from_cache', False)
+                        'from_cache': res.get('from_cache', False),
+                        'outputs': context.get_outputs()
                     }
                 else:
                     return {'passed': False, 'reason': result.get('error', '执行失败')}
@@ -532,6 +555,7 @@ class SkillGenerator:
             elif task_type == 'drafting':
                 # 执行文书起草训练
                 result = skill.execute(
+                    context=context,
                     doc_type=task.get('doc_type', ''),
                     sections=task.get('sections', [])
                 )
@@ -542,7 +566,8 @@ class SkillGenerator:
                     return {
                         'passed': passed,
                         'content_length': len(content),
-                        'reason': '文书生成成功' if passed else '文书内容过短'
+                        'reason': '文书生成成功' if passed else '文书内容过短',
+                        'outputs': context.get_outputs()
                     }
                 else:
                     return {'passed': False, 'reason': result.get('error', '执行失败')}
@@ -550,6 +575,7 @@ class SkillGenerator:
             elif task_type == 'analysis':
                 # 执行案例分析训练
                 result = skill.execute(
+                    context=context,
                     case_text=f"这是一个{task.get('case_type', '')}案例，需要分析{task.get('focus', '')}",
                     analysis_type='comprehensive'
                 )
@@ -568,7 +594,8 @@ class SkillGenerator:
                         'has_analysis': has_summary,
                         'reason': '分析完成' if passed else '分析结果不完整',
                         'knowledge_stored': knowledge_stored,
-                        'knowledge_stats': knowledge_stats
+                        'knowledge_stats': knowledge_stats,
+                        'outputs': context.get_outputs()
                     }
                 else:
                     return {'passed': False, 'reason': result.get('error', '执行失败')}
@@ -582,7 +609,8 @@ class SkillGenerator:
                 return {
                     'passed': passed,
                     'difficulty': difficulty,
-                    'reason': '训练完成' if passed else '训练失败，需要更多练习'
+                    'reason': '训练完成' if passed else '训练失败，需要更多练习',
+                    'outputs': context.get_outputs()
                 }
 
         except Exception as e:
@@ -602,7 +630,7 @@ class SkillGenerator:
         class_name = ''.join(word.capitalize() for word in skill_id.split('_'))
 
         # 根据领域生成具体实现
-        execute_code, validate_code, execute_docstring = self._generate_domain_code(
+        execute_code, validate_code, execute_docstring, save_output_code = self._generate_domain_code(
             domain, skill_id, skill_name, capabilities
         )
 
@@ -625,6 +653,7 @@ class SkillGenerator:
             validate_code=validate_code,
             execute_code=execute_code,
             execute_docstring=execute_docstring,
+            save_output_code=save_output_code,
             examples=repr(examples)
         )
 
@@ -632,7 +661,7 @@ class SkillGenerator:
 
     def _generate_domain_code(self, domain: str, skill_id: str,
                                skill_name: str, capabilities: List[str]) -> tuple:
-        """根据领域生成具体代码"""
+        """根据领域生成具体代码（返回4元组：execute, validate, docstring, save_output）"""
 
         if domain == 'legal':
             return self._generate_legal_skill_code(skill_id, skill_name, capabilities)
@@ -667,6 +696,9 @@ class SkillGenerator:
                         'from_cache': True,
                         'stored_to_kb': 0
                     }
+                    # 缓存路径也保存产出物
+                    if context and result:
+                        self._save_output(context, result)
                     return {'success': True, 'result': result}
 
             # 2. 本地知识不足，深度联网搜索
@@ -889,7 +921,82 @@ class SkillGenerator:
             # 通用法律技能
             return self._generate_generic_skill_code(skill_id, skill_name, capabilities)
 
-        return execute_code, validate_code, docstring
+        # 生成产出物保存代码
+        if 'research' in skill_id or '检索' in skill_name:
+            save_output_code = '''
+        # 保存检索结果
+        results = result.get('results', [])
+        if results:
+            content_lines = [f"## 检索查询: {result.get('query', '')}\\n"]
+            for i, r in enumerate(results[:5], 1):
+                content_lines.append(f"### {i}. {r.get('title', '无标题')}")
+                content_lines.append(f"- 来源: {r.get('source', '未知')}")
+                if r.get('url'):
+                    content_lines.append(f"- URL: {r.get('url')}")
+                content_lines.append(f"\\n{r.get('content', '')[:500]}...\\n")
+            context.save_output(
+                output_type='research',
+                title=f"法律检索_{result.get('query', '未知')[:20]}",
+                content='\\n'.join(content_lines),
+                category='research_results',
+                metadata={'total_found': result.get('total_found', 0), 'from_cache': result.get('from_cache', False)}
+            )'''
+        elif 'drafting' in skill_id or '文书' in skill_name:
+            save_output_code = '''
+        # 保存文书草稿
+        context.save_output(
+            output_type='document',
+            title=f"{result.get('doc_type', '文书')}草稿",
+            content=result.get('content', ''),
+            category='drafts',
+            metadata={'sections': result.get('sections', []), 'references': result.get('references', [])}
+        )'''
+        elif 'analysis' in skill_id or '分析' in skill_name:
+            save_output_code = '''
+        # 保存分析报告
+        content_lines = [
+            f"## 案例摘要\\n{result.get('case_summary', '')}\\n",
+            f"## 关键事实\\n" + '\\n'.join(f"- {f}" for f in result.get('key_facts', [])),
+            f"\\n## 法律问题\\n" + '\\n'.join(f"- {i}" for i in result.get('legal_issues', [])),
+            f"\\n## 适用法律\\n" + '\\n'.join(f"- {l}" for l in result.get('applicable_laws', [])),
+            f"\\n## 分析结论\\n{result.get('analysis', '')}"
+        ]
+        context.save_output(
+            output_type='analysis',
+            title=f"案例分析报告",
+            content='\\n'.join(content_lines),
+            category='analysis_reports',
+            metadata={'knowledge_stats': result.get('knowledge_stats', {})}
+        )'''
+        elif 'contract' in skill_id or '合同' in skill_name:
+            save_output_code = '''
+        # 保存合同审查报告
+        content_lines = [
+            f"## 合同审查报告\\n",
+            f"- 整体评级: {result.get('overall_rating', 'N/A')}",
+            f"- 风险等级: {result.get('risk_level', 'N/A')}\\n",
+            f"## 发现的问题\\n" + '\\n'.join(f"- [{i.get('type')}] {i.get('description')}" for i in result.get('issues', [])),
+            f"\\n## 改进建议\\n" + '\\n'.join(f"- {s}" for s in result.get('suggestions', []))
+        ]
+        context.save_output(
+            output_type='review',
+            title=f"合同审查报告",
+            content='\\n'.join(content_lines),
+            category='contract_reviews'
+        )'''
+        else:
+            save_output_code = '''
+        # 通用产出物保存
+        import json
+        context.save_output(
+            output_type='result',
+            title=f"技能执行结果_{self.metadata.skill_id}",
+            content=json.dumps(result, ensure_ascii=False, indent=2),
+            format='json',
+            category='skill_outputs'
+        )'''
+
+        return execute_code, validate_code, docstring, save_output_code
 
     def _generate_software_skill_code(self, skill_id: str, skill_name: str,
                                        capabilities: List[str]) -> tuple:
@@ -1075,7 +1182,54 @@ class SkillGenerator:
         else:
             return self._generate_generic_skill_code(skill_id, skill_name, capabilities)
 
-        return execute_code, validate_code, docstring
+        # 生成产出物保存代码
+        if 'code_review' in skill_id or '代码审查' in skill_name:
+            save_output_code = '''
+        # 保存代码审查报告
+        content_lines = [
+            f"## 代码审查报告\\n",
+            f"- 语言: {result.get('language', 'unknown')}",
+            f"- 质量评分: {result.get('quality_score', 0):.2f}",
+            f"- 分析行数: {result.get('lines_analyzed', 0)}\\n",
+            f"## 发现的问题\\n"
+        ]
+        for issue in result.get('issues', []):
+            content_lines.append(f"- 行 {issue.get('line', '?')}: [{issue.get('type', 'issue')}] {issue.get('message', '')}")
+        context.save_output(
+            output_type='code_review',
+            title=f"代码审查_{result.get('language', 'code')}",
+            content='\\n'.join(content_lines),
+            category='code_reviews'
+        )'''
+        elif 'debug' in skill_id or '调试' in skill_name:
+            save_output_code = '''
+        # 保存调试方案
+        content_lines = [
+            f"## 错误调试报告\\n",
+            f"### 错误信息\\n```\\n{result.get('error', '')}\\n```\\n",
+            f"### 可能的解决方案\\n"
+        ]
+        for s in result.get('possible_solutions', [])[:5]:
+            content_lines.append(f"- [{s.get('title', '方案')}]({s.get('url', '')})")
+        context.save_output(
+            output_type='debug',
+            title=f"调试方案_{result.get('language', 'code')}",
+            content='\\n'.join(content_lines),
+            category='debug_solutions'
+        )'''
+        else:
+            save_output_code = '''
+        # 通用产出物保存
+        import json
+        context.save_output(
+            output_type='result',
+            title=f"技能执行结果_{self.metadata.skill_id}",
+            content=json.dumps(result, ensure_ascii=False, indent=2),
+            format='json',
+            category='skill_outputs'
+        )'''
+
+        return execute_code, validate_code, docstring, save_output_code
 
     def _generate_generic_skill_code(self, skill_id: str, skill_name: str,
                                       capabilities: List[str]) -> tuple:
@@ -1118,7 +1272,18 @@ class SkillGenerator:
         Returns:
             执行结果，包含网络搜索结果'''
 
-        return execute_code, validate_code, docstring
+        save_output_code = '''
+        # 通用产出物保存
+        import json
+        context.save_output(
+            output_type='generic',
+            title=f"执行结果_{self.metadata.skill_id}",
+            content=json.dumps(result, ensure_ascii=False, indent=2),
+            format='json',
+            category='generic_outputs'
+        )'''
+
+        return execute_code, validate_code, docstring, save_output_code
 
     def _generate_examples(self, domain: str, skill_id: str) -> List[Dict[str, Any]]:
         """生成使用示例"""

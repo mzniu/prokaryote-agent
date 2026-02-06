@@ -3,7 +3,7 @@
 描述: 检索法律条文、判例和法规的能力
 领域: legal
 层级: basic
-生成时间: 2026-02-06T19:43:32.161164
+生成时间: 2026-02-06T21:44:53.324456
 
 能力:
 - 检索法条
@@ -12,7 +12,8 @@
 """
 
 from prokaryote_agent.skills.skill_base import Skill, SkillMetadata
-from typing import Dict, Any, List
+from prokaryote_agent.skills.skill_context import SkillContext
+from typing import Dict, Any, List, Optional
 
 
 class LegalResearchBasic(Skill):
@@ -43,10 +44,12 @@ class LegalResearchBasic(Skill):
         query = kwargs.get('query')
         return query is not None and len(query.strip()) > 0
 
-    def execute(self, **kwargs) -> Dict[str, Any]:
+    def execute(self, context: SkillContext = None, **kwargs) -> Dict[str, Any]:
         """
         执行技能
 
+        Args:
+            context: 技能执行上下文，提供知识库访问、技能互调用、产出物保存
         
         Args:
             query: 检索关键词
@@ -80,6 +83,9 @@ class LegalResearchBasic(Skill):
                         'from_cache': True,
                         'stored_to_kb': 0
                     }
+                    # 缓存路径也保存产出物
+                    if context and result:
+                        self._save_output(context, result)
                     return {'success': True, 'result': result}
 
             # 2. 本地知识不足，深度联网搜索
@@ -125,6 +131,10 @@ class LegalResearchBasic(Skill):
                 'stored_to_kb': stored_count
             }
 
+            # 保存产出物到Knowledge（如果有context）
+            if context and result:
+                self._save_output(context, result)
+
             return {
                 'success': True,
                 'result': result
@@ -134,6 +144,27 @@ class LegalResearchBasic(Skill):
                 'success': False,
                 'error': str(e)
             }
+
+    def _save_output(self, context: SkillContext, result: Dict[str, Any]):
+        """保存产出物到Knowledge"""
+        
+        # 保存检索结果
+        results = result.get('results', [])
+        if results:
+            content_lines = [f"## 检索查询: {result.get('query', '')}\n"]
+            for i, r in enumerate(results[:5], 1):
+                content_lines.append(f"### {i}. {r.get('title', '无标题')}")
+                content_lines.append(f"- 来源: {r.get('source', '未知')}")
+                if r.get('url'):
+                    content_lines.append(f"- URL: {r.get('url')}")
+                content_lines.append(f"\n{r.get('content', '')[:500]}...\n")
+            context.save_output(
+                output_type='research',
+                title=f"法律检索_{result.get('query', '未知')[:20]}",
+                content='\n'.join(content_lines),
+                category='research_results',
+                metadata={'total_found': result.get('total_found', 0), 'from_cache': result.get('from_cache', False)}
+            )
 
     def get_usage_examples(self) -> List[Dict[str, Any]]:
         """返回使用示例"""

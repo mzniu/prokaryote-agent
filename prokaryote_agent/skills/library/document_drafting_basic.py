@@ -1,24 +1,26 @@
 """
 技能: 法律文书起草
-描述: 起草法律文书的能力
+描述: 起草基本法律文书（合同、声明等）
 领域: legal
 层级: basic
-生成时间: 2026-02-06T20:47:34.773383
+生成时间: 2026-02-06T21:45:22.942806
 
 能力:
 - 起草合同
-- 起草协议
+- 生成文书模板
+- 法律文书格式化
 """
 
 from prokaryote_agent.skills.skill_base import Skill, SkillMetadata
-from typing import Dict, Any, List
+from prokaryote_agent.skills.skill_context import SkillContext
+from typing import Dict, Any, List, Optional
 
 
 class DocumentDraftingBasic(Skill):
     """
     法律文书起草
 
-    起草法律文书的能力
+    起草基本法律文书（合同、声明等）
     """
 
     def __init__(self, metadata: SkillMetadata = None):
@@ -28,13 +30,13 @@ class DocumentDraftingBasic(Skill):
                 name="法律文书起草",
                 tier="basic",
                 domain="legal",
-                description="起草法律文书的能力"
+                description="起草基本法律文书（合同、声明等）"
             )
         super().__init__(metadata)
 
     def get_capabilities(self) -> List[str]:
         """返回技能能力列表"""
-        return ['起草合同', '起草协议']
+        return ['起草合同', '生成文书模板', '法律文书格式化']
 
     def validate_input(self, **kwargs) -> bool:
         """验证输入参数"""
@@ -42,10 +44,12 @@ class DocumentDraftingBasic(Skill):
         doc_type = kwargs.get('doc_type')
         return doc_type is not None
 
-    def execute(self, **kwargs) -> Dict[str, Any]:
+    def execute(self, context: SkillContext = None, **kwargs) -> Dict[str, Any]:
         """
         执行技能
 
+        Args:
+            context: 技能执行上下文，提供知识库访问、技能互调用、产出物保存
         
         Args:
             doc_type: 文书类型（劳动合同、保密协议等）
@@ -98,6 +102,10 @@ class DocumentDraftingBasic(Skill):
                 'warnings': ['请根据实际情况修改内容', '建议咨询专业律师审核']
             }
 
+            # 保存产出物到Knowledge（如果有context）
+            if context and result:
+                self._save_output(context, result)
+
             return {
                 'success': True,
                 'result': result
@@ -107,6 +115,18 @@ class DocumentDraftingBasic(Skill):
                 'success': False,
                 'error': str(e)
             }
+
+    def _save_output(self, context: SkillContext, result: Dict[str, Any]):
+        """保存产出物到Knowledge"""
+        
+        # 保存文书草稿
+        context.save_output(
+            output_type='document',
+            title=f"{result.get('doc_type', '文书')}草稿",
+            content=result.get('content', ''),
+            category='drafts',
+            metadata={'sections': result.get('sections', []), 'references': result.get('references', [])}
+        )
 
     def get_usage_examples(self) -> List[Dict[str, Any]]:
         """返回使用示例"""
