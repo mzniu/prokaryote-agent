@@ -500,6 +500,16 @@ class SimpleEvolutionAgent:
             if training_result.get('reason'):
                 self.logger.info(f"   ✓ {training_result['reason']}")
             
+            # 显示知识固化统计
+            knowledge_stored = result.get('knowledge_stored', 0)
+            if knowledge_stored > 0:
+                self.logger.info(f"   💾 知识固化: {knowledge_stored} 条新知识")
+            
+            # 显示代码进化
+            code_evolved = result.get('code_evolved', False)
+            if code_evolved:
+                self.logger.info(f"   🧬 代码进化: 技能能力已增强")
+            
             # 显示增强
             enhancements = result.get('enhancements', [])
             for enhancement in enhancements:

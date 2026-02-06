@@ -1,9 +1,4 @@
 {
-  "running": true,
-  "pid": 91472,
-  "started_at": "2026-02-06T00:34:05.848290",
-  "last_check": "2026-02-06T00:48:32.968732",
-  "evolution_count": 0,
-  "current_generation": 0,
-  "domain": "legal"
+  "running": false,
+  "stopped_at": "2026-02-06T09:25:45.557064"
 }

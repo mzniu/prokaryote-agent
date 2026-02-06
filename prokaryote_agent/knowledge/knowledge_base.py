@@ -620,3 +620,178 @@ def search_knowledge(query: str, domain: str = None, limit: int = 10) -> List[Di
     """搜索知识（便捷函数）"""
     kb = get_knowledge_base()
     return kb.search(query, domain=domain, limit=limit)
+
+
+def smart_search(query: str, domain: str, min_local: int = 2,
+                 web_search_func=None, acquired_by: str = "") -> Dict[str, Any]:
+    """
+    智能搜索 - 优先本地知识库，不足时补充网络搜索并固化知识
+    
+    Args:
+        query: 搜索查询
+        domain: 领域 ('legal', 'software_dev' 等)
+        min_local: 本地结果最小数量，不足时触发网络搜索
+        web_search_func: 网络搜索函数，签名: func(query, max_results) -> List[Dict]
+        acquired_by: 获取知识的技能ID
+        
+    Returns:
+        {
+            'local_results': [...],   # 本地知识
+            'web_results': [...],     # 网络搜索结果
+            'all_results': [...],     # 合并后的结果
+            'total': int,             # 总数
+            'from_local': int,        # 来自本地的数量
+            'from_web': int,          # 来自网络的数量
+            'knowledge_stored': int   # 新存储的知识数量
+        }
+    """
+    logger = logging.getLogger(__name__)
+    
+    result = {
+        'local_results': [],
+        'web_results': [],
+        'all_results': [],
+        'total': 0,
+        'from_local': 0,
+        'from_web': 0,
+        'knowledge_stored': 0
+    }
+    
+    # 1. 先搜索本地知识库
+    local_results = search_knowledge(query, domain=domain, limit=5)
+    result['local_results'] = local_results
+    result['from_local'] = len(local_results)
+    
+    if local_results:
+        logger.info(f"📚 知识库命中 '{query}': {len(local_results)} 条")
+    
+    # 2. 如果本地知识不足，进行网络搜索
+    if len(local_results) < min_local and web_search_func:
+        try:
+            web_results = web_search_func(query, max_results=5)
+            if web_results:
+                result['web_results'] = web_results
+                result['from_web'] = len(web_results)
+                
+                logger.info(f"🌐 网络搜索 '{query}': {len(web_results)} 条")
+                
+                # 3. 将有价值的网络结果存入知识库
+                stored_count = 0
+                for item in web_results:
+                    if _is_valuable_knowledge(item):
+                        category = _determine_category(item, domain)
+                        try:
+                            path = store_knowledge(
+                                title=item.get('title', ''),
+                                content=item.get('content', item.get('snippet', '')),
+                                domain=domain,
+                                category=category,
+                                source_url=item.get('url', ''),
+                                acquired_by=acquired_by
+                            )
+                            if path:
+                                stored_count += 1
+                        except Exception as e:
+                            logger.debug(f"存储知识失败: {e}")
+                
+                if stored_count > 0:
+                    logger.info(f"💾 知识固化: {stored_count} 条新知识已存储")
+                result['knowledge_stored'] = stored_count
+                
+        except Exception as e:
+            logger.warning(f"网络搜索失败: {e}")
+    
+    # 合并结果
+    result['all_results'] = local_results + result['web_results']
+    result['total'] = result['from_local'] + result['from_web']
+    return result
+
+
+def _is_valuable_knowledge(item: Dict[str, Any]) -> bool:
+    """评估知识是否有存储价值"""
+    content = item.get('content', item.get('snippet', ''))
+    
+    # 内容长度检查
+    if not content or len(content) < 80:
+        return False
+    
+    # 来源检查（官方网站优先）
+    url = item.get('url', '')
+    valuable_domains = [
+        'gov.cn', 'court.gov.cn', 'law.cn',  # 法律官方
+        'wikipedia.org', 'baike.baidu.com',   # 百科
+        'github.com', 'docs.python.org',      # 技术文档
+    ]
+    
+    # 如果是可信来源，降低内容长度要求
+    for domain in valuable_domains:
+        if domain in url:
+            return len(content) >= 50
+    
+    return True
+
+
+def _determine_category(item: Dict[str, Any], domain: str) -> str:
+    """根据内容确定知识类别"""
+    content = (item.get('title', '') + ' ' + item.get('content', '')).lower()
+    url = item.get('url', '').lower()
+    
+    if domain == 'legal':
+        if '判例' in content or 'case' in url or '案例' in content:
+            return 'cases'
+        elif '法' in content or '条例' in content or '规定' in content:
+            return 'laws'
+        else:
+            return 'concepts'
+    
+    elif domain == 'software_dev':
+        if 'error' in content or '错误' in content or 'exception' in content:
+            return 'errors'
+        elif 'api' in url or 'doc' in url:
+            return 'apis'
+        else:
+            return 'general'
+    
+    return 'general'
+
+
+def get_knowledge_stats(domain: str = None) -> Dict[str, Any]:
+    """
+    获取知识库统计信息
+    
+    Args:
+        domain: 限定领域，None表示全部
+        
+    Returns:
+        统计信息字典
+    """
+    kb = get_knowledge_base()
+    
+    stats = {
+        'total_files': 0,
+        'by_domain': {},
+        'by_category': {}
+    }
+    
+    # 统计文件数
+    for md_file in kb.base_path.rglob("*.md"):
+        if md_file.name.startswith("_"):
+            continue
+        
+        try:
+            rel_path = md_file.relative_to(kb.base_path)
+            parts = rel_path.parts
+            if len(parts) >= 2:
+                file_domain = parts[0]
+                file_category = parts[1]
+                
+                if domain and file_domain != domain:
+                    continue
+                
+                stats['total_files'] += 1
+                stats['by_domain'][file_domain] = stats['by_domain'].get(file_domain, 0) + 1
+                stats['by_category'][file_category] = stats['by_category'].get(file_category, 0) + 1
+        except ValueError:
+            pass
+    
+    return stats

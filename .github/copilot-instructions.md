@@ -29,3 +29,8 @@
 - Follow the module names and method responsibilities described in [docs/概要设计.md](docs/概要设计.md).
 - Keep file/dir names consistent with the storage structure in the design to avoid breaking backups/logs.
 - Any new interfaces should stay minimal and map cleanly to the V0.1 loop: init → monitor → repair → monitor.
+
+## 代码提交要求
+- All code must pass `flake8` linting.
+- commit messages must be clear and descriptive.
+- must commit after a milestone is reached.
