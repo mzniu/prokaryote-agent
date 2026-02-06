@@ -53,3 +53,6 @@ Thumbs.db
 .coverage
 htmlcov/
 config.json
+# Knowledge base content (generated at runtime)
+prokaryote_agent/knowledge/**/*.md
+!prokaryote_agent/knowledge/_index.md
