@@ -733,37 +733,40 @@ class SkillGenerator:
             template = kwargs.get('template', None)
             data = kwargs.get('data', {})
 
+            # 文书模板库
+            doc_templates = {
+                '劳动合同': ['合同双方', '工作内容', '工作时间', '劳动报酬', '社会保险', '劳动保护', '合同期限', '违约责任', '争议解决'],
+                '保密协议': ['保密内容范围', '保密期限', '保密义务', '违约责任', '例外情况'],
+                '租赁合同': ['租赁物描述', '租赁期限', '租金及支付', '押金', '维修责任', '违约责任'],
+                'NDA': ['保密信息定义', '保密义务', '使用限制', '期限', '违约救济'],
+                '起诉状': ['原告信息', '被告信息', '诉讼请求', '事实与理由', '证据清单'],
+                '答辩状': ['答辩人信息', '答辩意见', '事实与理由', '证据清单'],
+            }
+
+            # 获取文书章节
+            sections = doc_templates.get(doc_type, ['标题', '正文', '签章'])
+
             # 搜索相关模板和范例
-            search_results = web_search(f"{doc_type} 模板 范本", max_results=3)
+            try:
+                search_results = web_search(f"{doc_type} 模板 范本", max_results=3)
+                references = [{'title': r.get('title', ''), 'url': r.get('url', '')} for r in search_results[:2]]
+            except Exception:
+                references = []
 
-            # 提取参考信息
-            references = []
-            for r in search_results[:2]:
-                references.append({
-                    'title': r.get('title', ''),
-                    'url': r.get('url', '')
-                })
-
-            # 生成文书框架（基于搜索到的模板参考）
-            sections = self._get_document_sections(doc_type)
+            # 生成文书框架
+            content_lines = [f'【{doc_type}】', '']
+            for i, section in enumerate(sections):
+                content_lines.append(f'{i+1}. {section}')
+                content_lines.append(f'   [请填写{section}内容]')
+                content_lines.append('')
 
             result = {
                 'doc_type': doc_type,
-                'content': f'【{doc_type}】\\n\\n' + '\\n'.join(f'{i+1}. {s}' for i, s in enumerate(sections)),
+                'content': '\\n'.join(content_lines),
                 'sections': sections,
                 'references': references,
                 'warnings': ['请根据实际情况修改内容', '建议咨询专业律师审核']
-            }
-
-    def _get_document_sections(self, doc_type):
-        """获取文书章节"""
-        templates = {
-            '劳动合同': ['合同双方', '工作内容', '工作时间', '劳动报酬', '社会保险', '劳动保护', '合同期限', '违约责任', '争议解决'],
-            '保密协议': ['保密内容范围', '保密期限', '保密义务', '违约责任', '例外情况'],
-            '租赁合同': ['租赁物描述', '租赁期限', '租金及支付', '押金', '维修责任', '违约责任'],
-            'NDA': ['保密信息定义', '保密义务', '使用限制', '期限', '违约救济'],
-        }
-        return templates.get(doc_type, ['标题', '正文', '签章'])'''
+            }'''
             validate_code = '''
         doc_type = kwargs.get('doc_type')
         return doc_type is not None'''

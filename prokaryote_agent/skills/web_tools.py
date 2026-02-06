@@ -190,8 +190,8 @@ class WebFetcher:
         text = text.strip()
 
         # 限制长度（增大以支持法律文档）
-        if len(text) > 15000:
-            text = text[:15000] + '...'
+        if len(text) > 150000:
+            text = text[:150000] + '...'
 
         return text
 
@@ -413,9 +413,9 @@ def deep_search(query: str, max_results: int = 3, fetch_content: bool = True) ->
 
             if page.get('success'):
                 content = page.get('content', '')
-                # 提取前 8000 字符（法律文档通常较长）
-                if len(content) > 8000:
-                    content = content[:8000] + '...'
+                # 提取前 80000 字符（法律文档通常较长）
+                if len(content) > 80000:
+                    content = content[:80000] + '...'
 
                 result['content'] = content
                 result['url'] = url  # 使用真实 URL
