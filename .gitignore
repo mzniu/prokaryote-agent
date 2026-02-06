@@ -32,6 +32,11 @@ ENV/
 *.swo
 *~
 
+# Knowledge base content (generated at runtime)
+prokaryote_agent/knowledge/*
+prokaryote_agent/knowledge
+!prokaryote_agent/knowledge/_index.md
+
 # Prokaryote Agent Runtime
 prokaryote_agent/log/*.log
 prokaryote_agent/log/*.txt
