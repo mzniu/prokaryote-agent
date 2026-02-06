@@ -4,7 +4,7 @@
 这是Agent"学习"新技能的核心模块。
 当Agent需要学习一个新技能时，会：
 1. 分析技能定义（名称、描述、能力）
-2. 生成技能实现代码
+2. 生成技能实现代码（通过核心酶）
 3. 执行训练任务验证
 4. 保存到技能库
 
@@ -12,6 +12,10 @@
 - 执行技能测试用例
 - 处理边界情况
 - 优化代码实现
+
+代码生成策略：
+- 优先使用核心酶（SkillPipeline）：生成-验证-修复循环
+- 备用模板方案：如果核心酶不可用，使用内置模板
 """
 
 import json
@@ -22,6 +26,13 @@ from pathlib import Path
 from datetime import datetime
 
 from .skill_base import Skill, SkillMetadata, SkillLibrary
+
+# 尝试导入核心酶（可选依赖）
+try:
+    from prokaryote_agent.core_enzymes import SkillPipeline, get_skill_pipeline
+    CORE_ENZYMES_AVAILABLE = True
+except ImportError:
+    CORE_ENZYMES_AVAILABLE = False
 
 
 # 技能代码模板
@@ -99,11 +110,36 @@ class SkillGenerator:
     1. 基础学习 (level 1-5): 生成基本框架
     2. 进阶学习 (level 6-15): 添加更多功能
     3. 精通 (level 16+): 优化和高级特性
+    
+    代码生成：
+    - 优先使用核心酶（SkillPipeline）进行代码生成
+    - 核心酶不可用时，使用内置模板方案
     """
     
-    def __init__(self, library: SkillLibrary = None):
+    def __init__(self, library: SkillLibrary = None, use_core_enzymes: bool = True):
+        """
+        初始化技能生成器
+        
+        Args:
+            library: 技能库实例
+            use_core_enzymes: 是否使用核心酶生成代码（默认True）
+        """
         self.library = library or SkillLibrary()
         self.logger = logging.getLogger(__name__)
+        self.use_core_enzymes = use_core_enzymes and CORE_ENZYMES_AVAILABLE
+        self._pipeline = None
+        
+        if self.use_core_enzymes:
+            self.logger.info("技能生成器: 使用核心酶模式")
+        else:
+            self.logger.info("技能生成器: 使用模板模式")
+    
+    @property
+    def pipeline(self) -> Optional['SkillPipeline']:
+        """获取技能生成管线（延迟加载）"""
+        if self._pipeline is None and self.use_core_enzymes:
+            self._pipeline = get_skill_pipeline()
+        return self._pipeline
     
     def learn_skill(self, skill_definition: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -133,8 +169,27 @@ class SkillGenerator:
         self.logger.info(f"开始学习技能: {skill_id}")
         
         try:
-            # 1. 生成技能代码
-            code = self._generate_skill_code(skill_definition)
+            # 1. 生成技能代码（优先使用核心酶）
+            if self.use_core_enzymes and self.pipeline:
+                self.logger.info(f"使用核心酶生成代码: {skill_id}")
+                gen_result = self.pipeline.generate(skill_definition)
+                
+                if gen_result['success']:
+                    code = gen_result['code']
+                    self.logger.info(
+                        f"核心酶生成成功: {skill_id}, "
+                        f"尝试次数={gen_result['attempts']}, "
+                        f"修复={gen_result['repairs']}"
+                    )
+                else:
+                    # 核心酶失败，尝试模板方案
+                    self.logger.warning(
+                        f"核心酶生成失败: {gen_result['error']}, 尝试模板方案"
+                    )
+                    code = self._generate_skill_code(skill_definition)
+            else:
+                # 使用模板方案
+                code = self._generate_skill_code(skill_definition)
             
             # 2. 验证代码（语法检查）
             if not self._validate_code(code):
