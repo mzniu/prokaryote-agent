@@ -317,6 +317,23 @@ class SkillGenerator:
 
         # 检查评估结果
         if not evaluation_result['passed']:
+            self.logger.warning(
+                f"训练未通过: {skill_id} "
+                f"得分 {evaluation_result.get('score', '?')}/"
+                f"{evaluation_result.get('threshold', '?')} "
+                f"({evaluation_result.get('method', '?')})"
+            )
+            if evaluation_result.get('reason'):
+                reason = evaluation_result['reason']
+                self.logger.warning(
+                    f"  原因: {reason[:300]}"
+                    f"{'...' if len(reason) > 300 else ''}"
+                )
+            if evaluation_result.get('summary'):
+                self.logger.info(
+                    f"  摘要: {evaluation_result['summary'][:300]}"
+                )
+
             # 记录失败并分析原因
             optimization_info = self._record_training_failure(
                 skill_id=skill_id,

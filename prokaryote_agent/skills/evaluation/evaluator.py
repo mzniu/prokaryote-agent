@@ -111,6 +111,8 @@ class TrainingEvaluator:
                         f"得分 {result.total_score:.1f}, "
                         f"{'通过' if result.passed else '未通过'}"
                     )
+                    # 详细评估日志
+                    self._log_evaluation_details(result)
                     return result
             else:
                 self.logger.debug("AI适配器不可用，使用规则评估")
@@ -126,6 +128,53 @@ class TrainingEvaluator:
         """
         exclude_keys = {"type", "name", "description", "difficulty"}
         return {k: v for k, v in task.items() if k not in exclude_keys}
+
+    def _log_evaluation_details(self, result) -> None:
+        """输出详细评估信息到日志，方便调试"""
+        self.logger.info(
+            f"  评估方法: {result.evaluation_method} | "
+            f"阈值: {result.pass_threshold:.1f} | "
+            f"决策: {result.decision.value}"
+        )
+
+        # 维度得分
+        if result.dimension_scores:
+            self.logger.info("  维度得分:")
+            for ds in result.dimension_scores:
+                feedback_text = (
+                    f" | {ds.feedback[:80]}"
+                    if ds.feedback else ""
+                )
+                self.logger.info(
+                    f"    - {ds.name}: "
+                    f"{ds.score:.1f}/10 "
+                    f"(权重 {ds.weight:.0%}, "
+                    f"加权 {ds.weighted_score:.2f})"
+                    f"{feedback_text}"
+                )
+
+        # 总体反馈
+        if result.overall_feedback:
+            feedback = result.overall_feedback
+            self.logger.info(
+                f"  总体反馈: {feedback[:200]}"
+                f"{'...' if len(feedback) > 200 else ''}"
+            )
+
+        # 改进建议
+        if result.improvement_suggestions:
+            self.logger.info("  改进建议:")
+            for i, s in enumerate(
+                result.improvement_suggestions[:5], 1
+            ):
+                text = s if isinstance(s, str) else str(s)
+                self.logger.info(f"    {i}. {text[:100]}")
+
+        # AI 原始响应（debug 级别，避免日志过长）
+        if hasattr(result, 'raw_ai_response') and result.raw_ai_response:
+            self.logger.debug(
+                f"  AI原始响应:\n{result.raw_ai_response[:1000]}"
+            )
 
     def _ai_evaluate(self, context: EvaluationContext) -> Optional[EvaluationResult]:
         """
