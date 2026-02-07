@@ -21,46 +21,6 @@ logger = logging.getLogger(__name__)
 class SkillOptimizer:
     """技能自优化器"""
 
-    # 失败原因类型
-    FAILURE_TYPES = {
-        'output_too_small': '产出物体量过小',
-        'no_knowledge_stored': '知识存储量为0',
-        'low_analysis_depth': '分析深度不足',
-        'missing_legal_refs': '缺少法律引用',
-        'low_relevance': '相关性不足',
-        'timeout': '执行超时',
-        'error': '执行错误',
-    }
-
-    # 每种失败类型对应的优化策略
-    OPTIMIZATION_STRATEGIES = {
-        'output_too_small': [
-            'increase_analysis_length',
-            'add_more_sections',
-            'use_ai_generation',
-        ],
-        'no_knowledge_stored': [
-            'fix_storage_logic',
-            'enable_web_search',
-            'lower_storage_threshold',
-        ],
-        'low_analysis_depth': [
-            'add_ai_analysis',
-            'increase_search_keywords',
-            'add_context_integration',
-        ],
-        'missing_legal_refs': [
-            'add_law_search',
-            'add_case_search',
-            'expand_legal_categories',
-        ],
-        'low_relevance': [
-            'improve_keyword_extraction',
-            'add_semantic_search',
-            'filter_irrelevant_results',
-        ],
-    }
-
     def __init__(self, max_failures: int = 3, auto_optimize: bool = False):
         """
         初始化优化器
@@ -99,8 +59,12 @@ class SkillOptimizer:
             'timestamp': datetime.now().isoformat(),
             'level': level,
             'score': eval_result.get('score', 0),
-            'feedback': eval_result.get('feedback', ''),
-            'dimensions': eval_result.get('dimensions', {}),
+            'reason': eval_result.get('reason', ''),
+            'summary': eval_result.get('summary', ''),
+            'dimension_scores': eval_result.get('dimension_scores', []),
+            'improvement_suggestions': eval_result.get(
+                'improvement_suggestions', []),
+            'method': eval_result.get('method', ''),
             'execution_result': self._extract_key_info(execution_result),
         }
 
@@ -139,10 +103,11 @@ class SkillOptimizer:
                     "技能 %s 连续失败 %d 次，建议进行优化",
                     skill_id, consecutive
                 )
-            result['optimization_suggestions'] = \
+            result['optimization_suggestions'] = (
                 self.generate_optimization_suggestions(
                     skill_id, failure_analysis
                 )
+            )
 
         return result
 
@@ -152,16 +117,26 @@ class SkillOptimizer:
             self.failure_history[skill_id] = []
 
     def _extract_key_info(self, execution_result: Dict) -> Dict:
-        """提取执行结果的关键信息"""
+        """提取执行结果的关键信息（通用，不依赖特定领域字段）"""
         result = execution_result.get('result', {})
-        return {
+        info: Dict[str, Any] = {
+            'success': execution_result.get('success', False),
             'output_size': len(str(result)),
-            'knowledge_stats': result.get('knowledge_stats', {}),
-            'has_analysis': bool(result.get('analysis', '')),
-            'analysis_length': len(result.get('analysis', '')),
-            'legal_refs_count': len(result.get('applicable_laws', [])),
-            'key_facts_count': len(result.get('key_facts', [])),
         }
+
+        # 动态提取结果中的关键统计
+        if isinstance(result, dict):
+            for key, val in result.items():
+                if key in ('success',):
+                    continue
+                if isinstance(val, str):
+                    info[f'{key}_length'] = len(val)
+                elif isinstance(val, (list, tuple)):
+                    info[f'{key}_count'] = len(val)
+                elif isinstance(val, dict):
+                    info[f'{key}_keys'] = list(val.keys())[:5]
+
+        return info
 
     def _count_consecutive_failures(self, skill_id: str) -> int:
         """统计连续失败次数"""
@@ -172,94 +147,72 @@ class SkillOptimizer:
         """
         分析失败原因
 
+        基于 AI 评估的真实反馈（维度得分、改进建议）进行分析，
+        而非使用硬编码的领域特定指标。
+
         Returns:
-            包含主要原因、原因列表、模式统计
+            包含评估反馈摘要、薄弱维度、改进建议
         """
         failures = self.failure_history.get(skill_id, [])
         if not failures:
-            return {'primary_cause': 'unknown', 'causes': []}
+            return {'causes': [], 'eval_feedback': ''}
 
-        causes = []
-        recent_failures = failures[-3:]
-        num_failures = len(recent_failures)
+        recent = failures[-3:]
+        num = len(recent)
 
-        # 1. 检查产出物大小
-        avg_output_size = sum(
-            f['execution_result'].get('output_size', 0)
-            for f in recent_failures
-        ) / num_failures
+        # 1. 汇总评估反馈
+        reasons = [f.get('reason', '') for f in recent if f.get('reason')]
+        summaries = [
+            f.get('summary', '') for f in recent if f.get('summary')
+        ]
 
-        if avg_output_size < 500:
-            causes.append({
-                'type': 'output_too_small',
-                'confidence': min(1.0, (500 - avg_output_size) / 500),
-                'evidence': '平均产出物大小: %.0f 字符' % avg_output_size,
-            })
+        # 2. 聚合维度得分，找出薄弱项
+        dim_totals: Dict[str, List[float]] = {}
+        for f in recent:
+            for dim in f.get('dimension_scores', []):
+                name = dim.get('name', dim.get('dimension', ''))
+                score = dim.get('score', dim.get('weighted_score', 0))
+                if name:
+                    dim_totals.setdefault(name, []).append(score)
 
-        # 2. 检查知识存储
-        avg_stored = sum(
-            f['execution_result'].get('knowledge_stats', {}).get('stored', 0)
-            for f in recent_failures
-        ) / num_failures
-
-        if avg_stored == 0:
-            causes.append({
-                'type': 'no_knowledge_stored',
-                'confidence': 1.0,
-                'evidence': '最近训练均未存储新知识',
-            })
-
-        # 3. 检查分析深度
-        avg_analysis_len = sum(
-            f['execution_result'].get('analysis_length', 0)
-            for f in recent_failures
-        ) / num_failures
-
-        if avg_analysis_len < 200:
-            causes.append({
-                'type': 'low_analysis_depth',
-                'confidence': min(1.0, (200 - avg_analysis_len) / 200),
-                'evidence': '平均分析长度: %.0f 字符' % avg_analysis_len,
-            })
-
-        # 4. 检查法律引用
-        avg_refs = sum(
-            f['execution_result'].get('legal_refs_count', 0)
-            for f in recent_failures
-        ) / num_failures
-
-        if avg_refs < 2:
-            causes.append({
-                'type': 'missing_legal_refs',
-                'confidence': min(1.0, (2 - avg_refs) / 2),
-                'evidence': '平均法律引用数: %.1f' % avg_refs,
-            })
-
-        # 5. 从评估反馈中提取
-        for f in recent_failures:
-            feedback = f.get('feedback', '').lower()
-            if '相关' in feedback and ('不' in feedback or '低' in feedback):
-                causes.append({
-                    'type': 'low_relevance',
-                    'confidence': 0.7,
-                    'evidence': '评估反馈提及相关性问题',
+        weak_dimensions = []
+        for name, scores in dim_totals.items():
+            avg = sum(scores) / len(scores)
+            if avg < 6.0:  # 低于及格线
+                weak_dimensions.append({
+                    'dimension': name,
+                    'avg_score': round(avg, 1),
+                    'detail': f'{name} 平均得分 {avg:.1f}/10',
                 })
-                break
+        weak_dimensions.sort(key=lambda x: x['avg_score'])
 
-        # 按置信度排序
-        causes.sort(key=lambda x: x['confidence'], reverse=True)
-        primary_cause = causes[0]['type'] if causes else 'unknown'
+        # 3. 汇总 AI 评估的改进建议
+        all_suggestions = []
+        seen = set()
+        for f in recent:
+            for s in f.get('improvement_suggestions', []):
+                text = s if isinstance(s, str) else str(s)
+                if text and text not in seen:
+                    seen.add(text)
+                    all_suggestions.append(text)
+
+        # 4. 基础统计
+        avg_score = sum(
+            f.get('score', 0) for f in recent
+        ) / num
+        avg_output = sum(
+            f['execution_result'].get('output_size', 0)
+            for f in recent
+        ) / num
 
         return {
-            'primary_cause': primary_cause,
-            'primary_cause_desc': self.FAILURE_TYPES.get(primary_cause, '未知原因'),
-            'causes': causes,
-            'patterns': {
-                'avg_output_size': avg_output_size,
-                'avg_knowledge_stored': avg_stored,
-                'avg_analysis_length': avg_analysis_len,
-                'avg_legal_refs': avg_refs,
-            }
+            'avg_score': round(avg_score, 1),
+            'avg_output_size': round(avg_output, 0),
+            'eval_feedback': '\n'.join(reasons[-2:]),
+            'eval_summary': '\n'.join(summaries[-2:]),
+            'weak_dimensions': weak_dimensions,
+            'improvement_suggestions': all_suggestions[:5],
+            'causes': weak_dimensions,  # 兼容旧接口
         }
 
     def generate_optimization_suggestions(
@@ -267,136 +220,48 @@ class SkillOptimizer:
         skill_id: str,
         failure_analysis: Dict
     ) -> List[Dict]:
-        """生成优化建议"""
+        """
+        基于实际评估反馈生成上下文相关的优化建议
+
+        不再使用硬编码的 cause→strategy 映射表，
+        而是直接使用 AI 评估器给出的改进建议和薄弱维度。
+        """
         suggestions = []
-        causes = failure_analysis.get('causes', [])
 
-        for cause in causes[:3]:
-            cause_type = cause['type']
-            strategies = self.OPTIMIZATION_STRATEGIES.get(cause_type, [])
+        # 1. 来自 AI 评估的改进建议（最有针对性）
+        for i, text in enumerate(
+            failure_analysis.get('improvement_suggestions', [])[:5]
+        ):
+            suggestions.append({
+                'strategy': 'eval_suggestion',
+                'description': text,
+                'priority': i + 1,
+                'source': 'ai_evaluation',
+            })
 
-            for strategy in strategies:
-                suggestion = self._create_suggestion(cause_type, strategy, cause)
-                if suggestion:
-                    suggestions.append(suggestion)
+        # 2. 来自薄弱维度的针对性建议
+        for dim in failure_analysis.get('weak_dimensions', [])[:3]:
+            suggestions.append({
+                'strategy': 'fix_dimension',
+                'description': (
+                    f"提升 {dim['dimension']} "
+                    f"(当前 {dim['avg_score']}/10)"
+                ),
+                'priority': 10,
+                'source': 'weak_dimension',
+            })
+
+        # 3. 通用兜底（仅当以上都没有时）
+        if not suggestions:
+            suggestions.append({
+                'strategy': 'general_improve',
+                'description': '增强 execute() 方法的实际处理逻辑',
+                'priority': 99,
+                'source': 'fallback',
+            })
 
         suggestions.sort(key=lambda x: x.get('priority', 99))
         return suggestions
-
-    def _create_suggestion(
-        self,
-        cause_type: str,
-        strategy: str,
-        cause_info: Dict
-    ) -> Optional[Dict]:
-        """创建具体的优化建议"""
-        suggestion_templates = {
-            ('output_too_small', 'increase_analysis_length'): {
-                'description': '增加分析内容的长度要求，使用更详细的分析模板',
-                'priority': 1,
-                'implementation': 'modify_analysis_template',
-            },
-            ('output_too_small', 'add_more_sections'): {
-                'description': '添加更多分析维度（如风险分析、时间线分析等）',
-                'priority': 2,
-                'implementation': 'add_sections',
-            },
-            ('output_too_small', 'use_ai_generation'): {
-                'description': '使用 AI 生成更丰富的分析内容',
-                'priority': 3,
-                'implementation': 'enable_ai_analysis',
-            },
-            ('no_knowledge_stored', 'fix_storage_logic'): {
-                'description': '检查并修复知识存储逻辑，确保搜索结果被正确存储',
-                'priority': 1,
-                'implementation': 'fix_store_knowledge_call',
-            },
-            ('no_knowledge_stored', 'enable_web_search'): {
-                'description': '启用网络搜索并存储搜索结果到知识库',
-                'priority': 2,
-                'implementation': 'add_web_search_and_store',
-            },
-            ('no_knowledge_stored', 'lower_storage_threshold'): {
-                'description': '降低知识存储的内容长度阈值',
-                'priority': 3,
-                'implementation': 'adjust_storage_threshold',
-            },
-            ('low_analysis_depth', 'add_ai_analysis'): {
-                'description': '添加 AI 驱动的深度分析功能',
-                'priority': 1,
-                'implementation': 'integrate_ai_analysis',
-            },
-            ('low_analysis_depth', 'increase_search_keywords'): {
-                'description': '增加搜索关键词数量以获取更多背景信息',
-                'priority': 2,
-                'implementation': 'expand_keyword_extraction',
-            },
-            ('low_analysis_depth', 'add_context_integration'): {
-                'description': '整合更多上下文信息到分析中',
-                'priority': 3,
-                'implementation': 'enhance_context_usage',
-            },
-            ('missing_legal_refs', 'add_law_search'): {
-                'description': '添加专门的法律法规搜索',
-                'priority': 1,
-                'implementation': 'add_law_database_search',
-            },
-            ('missing_legal_refs', 'add_case_search'): {
-                'description': '添加相关案例搜索',
-                'priority': 2,
-                'implementation': 'add_case_search',
-            },
-            ('low_relevance', 'improve_keyword_extraction'): {
-                'description': '改进关键词提取算法，使用 NLP 或 AI',
-                'priority': 1,
-                'implementation': 'enhance_keyword_extraction',
-            },
-            ('low_relevance', 'add_semantic_search'): {
-                'description': '添加语义搜索以提高结果相关性',
-                'priority': 2,
-                'implementation': 'add_semantic_search',
-            },
-        }
-
-        template = suggestion_templates.get((cause_type, strategy))
-        if not template:
-            return None
-
-        return {
-            'cause_type': cause_type,
-            'strategy': strategy,
-            'description': template['description'],
-            'priority': template['priority'],
-            'implementation': template['implementation'],
-            'evidence': cause_info.get('evidence', ''),
-            'confidence': cause_info.get('confidence', 0),
-        }
-
-    def apply_optimization(
-        self,
-        skill_id: str,
-        suggestion: Dict
-    ) -> Dict[str, Any]:
-        """
-        应用优化建议（仅在 auto_optimize=True 时可用）
-
-        目前实现为生成优化提示，供人工审核。
-        """
-        if not self.auto_optimize:
-            return {
-                'success': False,
-                'error': 'auto_optimize is disabled',
-                'suggestion': suggestion,
-                'requires_review': True,
-            }
-
-        # TODO: 实现自动代码修改
-        return {
-            'success': False,
-            'error': 'Auto-optimization not yet implemented',
-            'suggestion': suggestion,
-            'requires_review': True,
-        }
 
     def ai_repair_skill(
         self,
@@ -551,29 +416,32 @@ class SkillOptimizer:
         failure_analysis: Dict,
         suggestions: List[Dict],
     ) -> str:
-        """构造 LLM 修复 prompt"""
-        # 失败原因描述
-        causes_text = ""
-        for cause in failure_analysis.get('causes', []):
-            desc = self.FAILURE_TYPES.get(cause['type'], cause['type'])
-            causes_text += f"- {desc} (置信度: {cause['confidence']:.0%})\n"
-            causes_text += f"  证据: {cause.get('evidence', '')}\n"
+        """构造 LLM 修复 prompt，使用实际评估反馈"""
+        # 评估反馈
+        eval_feedback = failure_analysis.get(
+            'eval_feedback', '无具体反馈')
+        eval_summary = failure_analysis.get('eval_summary', '')
 
-        # 优化建议描述
+        # 薄弱维度
+        weak_dims_text = ""
+        for dim in failure_analysis.get('weak_dimensions', []):
+            weak_dims_text += (
+                f"- {dim['dimension']}: "
+                f"{dim['avg_score']}/10\n"
+            )
+        if not weak_dims_text:
+            weak_dims_text = "无具体维度数据\n"
+
+        # 来自评估的改进建议
         suggestions_text = ""
         for s in suggestions[:5]:
-            suggestions_text += f"- [{s.get('strategy')}] {s.get('description')}\n"
+            suggestions_text += f"- {s.get('description')}\n"
+        if not suggestions_text:
+            suggestions_text = "无具体建议\n"
 
-        # 模式统计
-        patterns = failure_analysis.get('patterns', {})
-        patterns_text = ""
-        if patterns:
-            patterns_text = (
-                f"- 平均产出物大小: {patterns.get('avg_output_size', 0):.0f} 字符\n"
-                f"- 平均知识存储量: {patterns.get('avg_knowledge_stored', 0):.1f} 条\n"
-                f"- 平均分析长度: {patterns.get('avg_analysis_length', 0):.0f} 字符\n"
-                f"- 平均法律引用数: {patterns.get('avg_legal_refs', 0):.1f}\n"
-            )
+        # 基础统计
+        avg_score = failure_analysis.get('avg_score', 0)
+        avg_output = failure_analysis.get('avg_output_size', 0)
 
         prompt = f"""你是一个 Python 技能代码优化专家。请修复以下技能代码，使其能通过训练评估。
 
@@ -585,13 +453,20 @@ class SkillOptimizer:
 {source_code}
 ```
 
-## 连续失败分析
-{causes_text}
+## 训练评估反馈（来自 AI 评估器的真实反馈）
+{eval_feedback}
+
+## 评估摘要
+{eval_summary}
+
+## 薄弱维度得分
+{weak_dims_text}
 
 ## 统计数据
-{patterns_text}
+- 平均评估得分: {avg_score}/10
+- 平均产出物大小: {avg_output:.0f} 字符
 
-## 优化建议
+## 针对性改进建议
 {suggestions_text}
 
 ## 修复要求
