@@ -16,8 +16,8 @@
         "查找司法解释",
         "搜索相关判例"
       ],
-      "level": 20,
-      "proficiency": 1.0,
+      "level": 0,
+      "proficiency": 0.0,
       "prerequisites": [],
       "unlocked": true,
       "unlock_condition": "自动解锁",
@@ -42,8 +42,8 @@
         "撰写法律声明",
         "格式化法律文书"
       ],
-      "level": 20,
-      "proficiency": 1.0,
+      "level": 0,
+      "proficiency": 0.0,
       "prerequisites": [],
       "unlocked": true,
       "unlock_condition": "自动解锁",
@@ -68,8 +68,8 @@
         "识别法律争点",
         "分析判决要旨"
       ],
-      "level": 14,
-      "proficiency": 0.7,
+      "level": 0,
+      "proficiency": 0.0,
       "prerequisites": [],
       "unlocked": true,
       "unlock_condition": "自动解锁",

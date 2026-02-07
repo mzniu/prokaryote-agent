@@ -6,6 +6,10 @@ Prokaryote Agent - 简化版进化脚本
 进化优先级：
 1. 有明确目标 → 执行目标
 2. 没有目标 → 根据技能树自动进化技能
+   - 萌芽期(总等级<30)：80%通用技能，20%专业技能
+   - 成长期(30-100)：60%通用，40%专业
+   - 成熟期(100-300)：40%通用，60%专业
+   - 专精期(>=300)：25%通用，75%专业
 """
 
 import os
@@ -31,6 +35,8 @@ from prokaryote_agent.goal_manager import EvolutionGoalManager, GoalStatus
 from prokaryote_agent.skills.skill_base import SkillLibrary
 from prokaryote_agent.skills.skill_generator import SkillGenerator
 from prokaryote_agent.skills.skill_context import SkillContext
+from prokaryote_agent.specialization.skill_coordinator import SkillEvolutionCoordinator
+from prokaryote_agent.specialization.general_tree_optimizer import GeneralTreeOptimizer
 
 
 class SkillTreeManager:
@@ -80,8 +86,12 @@ class SkillTreeManager:
 
         if unlocked_skills:
             # 按 tier 优先级排序（basic > intermediate > advanced > master > expert）
-            tier_order = {'basic': 0, 'intermediate': 1, 'advanced': 2, 'master': 3, 'expert': 4}
-            unlocked_skills.sort(key=lambda s: (tier_order.get(s.get('tier', 'basic'), 0), -s.get('level', 0)))
+            tier_order = {
+                'basic': 0, 'intermediate': 1, 'advanced': 2, 'master': 3, 'expert': 4
+            }
+            unlocked_skills.sort(
+                key=lambda s: (tier_order.get(s.get('tier', 'basic'), 0), -s.get('level', 0))
+            )
             return unlocked_skills[0]
 
         # 2. 找可解锁的新技能
@@ -309,8 +319,12 @@ class SimpleEvolutionAgent:
         self.config_path = config_path or "prokaryote_agent/daemon_config.json"
         self.config = self._load_config()
 
-        # 技能树管理器
+        # 技能树管理器（单树模式，用于向后兼容）
         self.skill_tree_manager: Optional[SkillTreeManager] = None
+
+        # 技能进化协调器（双树模式，推荐）
+        self.skill_coordinator: Optional[SkillEvolutionCoordinator] = None
+        self.general_tree_optimizer: Optional[GeneralTreeOptimizer] = None
 
         # 技能库和生成器（用于真正实现技能）
         self.skill_library: Optional[SkillLibrary] = None
@@ -341,6 +355,106 @@ class SimpleEvolutionAgent:
         print("\n⚠️  收到停止信号，正在关闭...")
         self.running = False
 
+    def _init_skill_trees(self):
+        """初始化技能树（支持双树模式）"""
+        specialization = self.config.get('specialization', {})
+        domain_tree_path = specialization.get('skill_tree_path')
+        general_tree_path = specialization.get('general_tree_path')
+
+        # 处理路径
+        def resolve_path(path_str):
+            if not path_str:
+                return None
+            if path_str.startswith('./'):
+                return Path(path_str[2:])
+            return Path(path_str)
+
+        domain_path = resolve_path(domain_tree_path)
+        general_path = resolve_path(general_tree_path)
+
+        # 检查通用技能树默认路径
+        if not general_path or not general_path.exists():
+            default_general = Path(
+                "prokaryote_agent/specialization/domains/general_tree.json"
+            )
+            if default_general.exists():
+                general_path = default_general
+
+        # 双树模式：同时有通用树和领域树
+        if general_path and general_path.exists() and domain_path and domain_path.exists():  # noqa: E501
+            self._init_dual_tree_mode(general_path, domain_path, specialization)
+        # 单树模式：只有领域树（向后兼容）
+        elif domain_path and domain_path.exists():
+            self._init_single_tree_mode(domain_path, specialization)
+        else:
+            print("⚠️  未配置有效的技能树路径")
+
+    def _init_dual_tree_mode(self, general_path: Path, domain_path: Path, config: dict):  # noqa: E501
+        """初始化双树模式（推荐）"""
+        domain = config.get('domain', 'unknown')
+
+        # 创建协调器
+        self.skill_coordinator = SkillEvolutionCoordinator(
+            general_tree_path=str(general_path),
+            domain_tree_path=str(domain_path)
+        )
+
+        # 创建通用树优化器
+        self.general_tree_optimizer = GeneralTreeOptimizer(
+            tree=self.skill_coordinator.general_tree
+        )
+
+        # 同时创建单树管理器（向后兼容）
+        self.skill_tree_manager = SkillTreeManager(str(domain_path))
+
+        # 获取统计信息（从树字典中计算）
+        general_tree = self.skill_coordinator.general_tree
+        domain_tree = self.skill_coordinator.domain_tree
+
+        general_skills = general_tree.get('skills', {})
+        domain_skills = domain_tree.get('skills', {})
+
+        general_unlocked = sum(
+            1 for s in general_skills.values() if s.get('unlocked', False)
+        )
+        domain_unlocked = sum(
+            1 for s in domain_skills.values() if s.get('unlocked', False)
+        )
+
+        # 计算总等级
+        total_level = self.skill_coordinator.get_total_level()
+        stage = self.skill_coordinator.get_current_stage()
+        priority = self.skill_coordinator.get_current_priority()
+
+        # 阶段名称映射
+        stage_names = {
+            'sprouting': '萌芽期',
+            'growing': '成长期',
+            'maturing': '成熟期',
+            'specializing': '专精期'
+        }
+        stage_name_cn = stage_names.get(stage, stage)
+        general_pct = int(priority['general'] * 100)
+        domain_pct = int(priority['domain'] * 100)
+
+        print(f"✅ 双树进化模式已启用: {domain}")
+        print(f"   📚 通用技能树: {general_unlocked}/{len(general_skills)} 已解锁")
+        print(f"   🎯 领域技能树: {domain_unlocked}/{len(domain_skills)} 已解锁")
+        print(f"   📊 当前阶段: {stage}({stage_name_cn})")
+        print(f"   ⚖️  进化优先级: 通用{general_pct}% / 领域{domain_pct}%")
+        print(f"   📈 总技能等级: {total_level}")
+
+    def _init_single_tree_mode(self, domain_path: Path, config: dict):
+        """初始化单树模式（向后兼容）"""
+        domain = config.get('domain', 'unknown')
+        self.skill_tree_manager = SkillTreeManager(str(domain_path))
+        tree_stats = self.skill_tree_manager.get_statistics()
+
+        print(f"✅ 技能树已加载: {domain}")
+        print(f"   - 总技能: {tree_stats['total']}")
+        print(f"   - 已解锁: {tree_stats['unlocked']}")
+        print(f"   - 待解锁: {tree_stats['locked']}")
+
     def initialize(self) -> bool:
         """初始化系统"""
         print("=" * 50)
@@ -348,7 +462,7 @@ class SimpleEvolutionAgent:
         print("=" * 50)
 
         # 初始化核心系统
-        print("\n[1/3] 初始化核心系统...")
+        print("\n[1/4] 初始化核心系统...")
         result = init_prokaryote()
         if not result.get('success'):
             print(f"❌ 初始化失败: {result.get('msg')}")
@@ -365,31 +479,14 @@ class SimpleEvolutionAgent:
         print(f"   - 待执行: {stats['pending']}")
         print(f"   - 已完成: {stats['completed']}")
 
-        # 加载技能树
+        # 加载技能树（支持双树模式）
         print("\n[3/4] 加载技能树...")
-        skill_tree_path = self.config.get('specialization', {}).get('skill_tree_path')
-        if skill_tree_path:
-            # 处理相对路径（配置中可能是 ./xxx 或 xxx 形式）
-            if skill_tree_path.startswith('./'):
-                full_path = Path(skill_tree_path[2:])
-            else:
-                full_path = Path(skill_tree_path)
-
-            if full_path.exists():
-                self.skill_tree_manager = SkillTreeManager(str(full_path))
-                tree_stats = self.skill_tree_manager.get_statistics()
-                domain = self.config.get('specialization', {}).get('domain', 'unknown')
-                print(f"✅ 技能树已加载: {domain}")
-                print(f"   - 总技能: {tree_stats['total']}")
-                print(f"   - 已解锁: {tree_stats['unlocked']}")
-                print(f"   - 待解锁: {tree_stats['locked']}")
-            else:
-                print(f"⚠️  技能树文件不存在: {full_path}")
-        else:
-            print("⚠️  未配置技能树路径")
+        self._init_skill_trees()
 
         # 初始化技能库和生成器
         print("\n[4/4] 初始化技能库...")
+        self.skill_library = SkillLibrary()
+        self.skill_generator = SkillGenerator(self.skill_library)
         self.skill_library = SkillLibrary()
         self.skill_generator = SkillGenerator(self.skill_library)
         lib_stats = self.skill_library.get_statistics()
@@ -463,11 +560,182 @@ class SimpleEvolutionAgent:
 
     def _execute_skill_evolution(self):
         """根据技能树执行技能进化"""
-        if not self.skill_tree_manager:
-            self.logger.info("📋 没有待执行的目标，也没有技能树配置")
+        # 优先使用协调器（双树模式）
+        if self.skill_coordinator:
+            self._execute_coordinated_evolution()
             return
 
-        # 获取下一个要进化的技能
+        # 降级到单树模式
+        if self.skill_tree_manager:
+            self._execute_single_tree_evolution()
+            return
+
+        self.logger.info("📋 没有待执行的目标，也没有技能树配置")
+
+    def _execute_coordinated_evolution(self):
+        """使用协调器执行双树进化"""
+        # 显示当前进化阶段
+        stage = self.skill_coordinator.get_current_stage()
+        priority = self.skill_coordinator.get_current_priority()
+        total_level = self.skill_coordinator.get_total_level()
+
+        # 阶段名称映射
+        stage_names = {
+            'sprouting': '萌芽期',
+            'growing': '成长期',
+            'maturing': '成熟期',
+            'specializing': '专精期'
+        }
+        stage_name_cn = stage_names.get(stage, stage)
+        general_pct = int(priority['general'] * 100)
+        domain_pct = int(priority['domain'] * 100)
+
+        self.logger.info(f"🌱 进化阶段: {stage_name_cn} (总等级: {total_level})")
+        self.logger.info(f"   优先级: 通用{general_pct}% / 领域{domain_pct}%")
+
+        # 从协调器获取下一个要进化的技能
+        skill_tree, skill = self.skill_coordinator.select_next_skill()
+
+        if skill_tree == 'none' or skill is None:
+            self.logger.info("🏆 所有技能已达到最高等级!")
+
+            # 尝试优化通用技能树
+            if self.general_tree_optimizer:
+                self.logger.info("🧬 尝试优化通用技能树...")
+                result = self.general_tree_optimizer.optimize()
+                if result.get('success'):
+                    new_skills = result.get('new_skills', [])
+                    if new_skills:
+                        self.logger.info(f"   发现 {len(new_skills)} 个新技能!")
+                        for ns in new_skills[:3]:
+                            self.logger.info(f"   - {ns['name']}")
+            return
+
+        skill_id = skill['id']
+        skill_name = skill.get('name', skill_id)
+        current_level = skill.get('level', 0)
+        max_level = skill.get('max_level', 20)
+        needs_unlock = current_level == 0
+
+        tree_emoji = "📚" if skill_tree == 'general' else "🎯"
+        tree_label = "通用" if skill_tree == 'general' else "领域"
+
+        if needs_unlock:
+            # 解锁新技能
+            self.logger.info(f"🔓 解锁新技能: {skill_name} [{tree_label}]")
+            self.logger.info(f"   描述: {skill.get('description', '')}")
+
+            success = self._train_skill_unlock(skill)
+
+            if success:
+                # 在对应的树上解锁技能
+                if skill_tree == 'general':
+                    tree = self.skill_coordinator.general_tree
+                    if skill_id in tree.get('skills', {}):
+                        tree['skills'][skill_id]['unlocked'] = True
+                        tree['skills'][skill_id]['level'] = 1
+                else:
+                    tree = self.skill_coordinator.domain_tree
+                    if skill_id in tree.get('skills', {}):
+                        tree['skills'][skill_id]['unlocked'] = True
+                        tree['skills'][skill_id]['level'] = 1
+
+                # 记录进化成功
+                self.skill_coordinator.record_evolution_success(
+                    skill_tree, skill_id, 1
+                )
+
+                # 检查解锁新技能
+                self._check_and_unlock_new_skills()
+
+                self.skill_evolution_count += 1
+                self.logger.info(f"✅ {tree_emoji} 技能已解锁: {skill_name} (Lv.1)")
+
+                # 每5次进化尝试优化通用技能树
+                self._try_optimize_general_tree()
+            else:
+                self.logger.warning(f"❌ 解锁失败: {skill_name}")
+        else:
+            # 提升已有技能
+            self.logger.info(f"📈 提升技能: {skill_name} [{tree_label}]")
+            self.logger.info(f"   (Lv.{current_level} → Lv.{current_level + 1})")
+            self.logger.info(f"   进度: {current_level}/{max_level}")
+
+            success = self._train_skill_level_up(skill)
+
+            if success:
+                # 在对应的树上提升技能等级
+                new_level = current_level + 1
+                if skill_tree == 'general':
+                    tree = self.skill_coordinator.general_tree
+                    if skill_id in tree.get('skills', {}):
+                        tree['skills'][skill_id]['level'] = new_level
+                else:
+                    tree = self.skill_coordinator.domain_tree
+                    if skill_id in tree.get('skills', {}):
+                        tree['skills'][skill_id]['level'] = new_level
+
+                # 记录进化成功
+                self.skill_coordinator.record_evolution_success(
+                    skill_tree, skill_id, new_level
+                )
+
+                # 检查解锁新技能
+                self._check_and_unlock_new_skills()
+
+                self.skill_evolution_count += 1
+                self.logger.info(
+                    f"✅ {tree_emoji} 技能提升: {skill_name} (Lv.{new_level})"
+                )
+
+                # 每5次进化尝试优化通用技能树
+                self._try_optimize_general_tree()
+            else:
+                self.logger.warning(f"❌ 提升失败: {skill_name}")
+
+    def _check_and_unlock_new_skills(self):
+        """检查并自动解锁满足前置条件的技能"""
+        if not self.skill_coordinator:
+            return
+
+        newly_unlocked = self.skill_coordinator.check_and_unlock_all_skills()
+        for unlock_info in newly_unlocked:
+            skill_id = unlock_info['skill_id']
+            tree_type = unlock_info['tree']
+            tree_emoji = "📚" if tree_type == 'general' else "🎯"
+            self.logger.info(f"   {tree_emoji} 自动解锁: {skill_id}")
+
+    def _try_optimize_general_tree(self):
+        """尝试优化通用技能树（每5次进化触发一次）"""
+        if not self.general_tree_optimizer:
+            return
+
+        if self.skill_evolution_count > 0 and self.skill_evolution_count % 5 == 0:
+            self.logger.info("🧬 检查通用技能树优化...")
+            try:
+                # 构建优化上下文
+                context = {
+                    'total_level': self.skill_coordinator.get_total_level(),
+                    'general_level': self.skill_coordinator.get_general_level_sum(),
+                    'domain_level': self.skill_coordinator.get_domain_level_sum(),
+                    'stage': self.skill_coordinator.get_current_stage()
+                }
+                result = self.general_tree_optimizer.optimize(
+                    trigger_skill='evolution_milestone',
+                    trigger_level=self.skill_evolution_count,
+                    context=context
+                )
+                if result.get('new_skills'):
+                    new_skills = result.get('new_skills', [])
+                    self.logger.info(f"   💡 发现 {len(new_skills)} 个潜在新技能")
+                if result.get('synergies'):
+                    synergies = result.get('synergies', [])
+                    self.logger.info(f"   🔗 发现 {len(synergies)} 个技能协同")
+            except Exception as e:
+                self.logger.debug(f"优化检查跳过: {e}")
+
+    def _execute_single_tree_evolution(self):
+        """单树模式进化（向后兼容）"""
         skill = self.skill_tree_manager.get_next_skill_to_evolve()
 
         if not skill:
@@ -495,8 +763,8 @@ class SimpleEvolutionAgent:
                 self.logger.warning(f"❌ 解锁失败: {skill_name}")
         else:
             # 提升已有技能
-            self.logger.info(f"📈 提升技能: {skill_name} (Lv.{current_level} → Lv.{current_level + 1})")
-            self.logger.info(f"   层级: {skill.get('tier', 'basic').capitalize()}")
+            self.logger.info(f"📈 提升技能: {skill_name}")
+            self.logger.info(f"   (Lv.{current_level} → Lv.{current_level + 1})")
             self.logger.info(f"   进度: {current_level}/{max_level}")
 
             success = self._train_skill_level_up(skill)

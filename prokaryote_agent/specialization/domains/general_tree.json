@@ -1,0 +1,322 @@
+{
+  "tree_id": "general_skills",
+  "name": "通用技能树",
+  "version": "1.0.0",
+  "description": "Agent的基础能力，支撑所有专业领域",
+  "auto_optimize": true,
+  "last_optimized": null,
+  "categories": {
+    "knowledge_acquisition": {
+      "name": "知识获取",
+      "description": "获取和理解外部信息的能力",
+      "priority": 1.0
+    },
+    "world_interaction": {
+      "name": "外界交互",
+      "description": "与真实世界交互的能力",
+      "priority": 0.8
+    },
+    "self_evolution": {
+      "name": "自我进化",
+      "description": "自我改进和适应的能力",
+      "priority": 0.6
+    }
+  },
+  "skills": {
+    "web_search_basic": {
+      "name": "网络搜索",
+      "category": "knowledge_acquisition",
+      "tier": "basic",
+      "level": 1,
+      "max_level": 20,
+      "proficiency": 0.0,
+      "description": "使用搜索引擎获取信息，支持多引擎、关键词优化",
+      "capabilities": [
+        "基础关键词搜索",
+        "搜索结果过滤",
+        "多页结果获取"
+      ],
+      "prerequisites": [],
+      "unlocked": true,
+      "training_focus": "提升搜索精准度和结果质量"
+    },
+    "web_scraping_basic": {
+      "name": "网页抓取",
+      "category": "knowledge_acquisition",
+      "tier": "basic",
+      "level": 0,
+      "max_level": 20,
+      "proficiency": 0.0,
+      "description": "抓取和解析网页内容，提取有价值信息",
+      "capabilities": [
+        "HTML内容获取",
+        "文本提取",
+        "链接解析"
+      ],
+      "prerequisites": [
+        "web_search_basic"
+      ],
+      "unlock_condition": "web_search_basic >= 5",
+      "unlocked": false,
+      "training_focus": "提升内容提取准确性"
+    },
+    "web_scraping_advanced": {
+      "name": "高级网页抓取",
+      "category": "knowledge_acquisition",
+      "tier": "intermediate",
+      "level": 0,
+      "max_level": 30,
+      "proficiency": 0.0,
+      "description": "处理动态页面、反爬虫机制、JS渲染内容",
+      "capabilities": [
+        "JS渲染页面处理",
+        "反爬虫绕过",
+        "登录态维护"
+      ],
+      "prerequisites": [
+        "web_scraping_basic"
+      ],
+      "unlock_condition": "web_scraping_basic >= 15",
+      "unlocked": false,
+      "training_focus": "处理复杂网站场景"
+    },
+    "api_integration": {
+      "name": "API集成",
+      "category": "knowledge_acquisition",
+      "tier": "basic",
+      "level": 0,
+      "max_level": 20,
+      "proficiency": 0.0,
+      "description": "调用外部API获取数据，支持REST/GraphQL",
+      "capabilities": [
+        "REST API调用",
+        "认证处理",
+        "响应解析"
+      ],
+      "prerequisites": [
+        "web_search_basic"
+      ],
+      "unlock_condition": "web_search_basic >= 5",
+      "unlocked": false,
+      "training_focus": "扩展数据来源"
+    },
+    "document_parsing": {
+      "name": "文档解析",
+      "category": "knowledge_acquisition",
+      "tier": "basic",
+      "level": 0,
+      "max_level": 20,
+      "proficiency": 0.0,
+      "description": "解析PDF、Word、Excel等格式文档",
+      "capabilities": [
+        "PDF文本提取",
+        "Office文档解析",
+        "表格数据提取"
+      ],
+      "prerequisites": [
+        "file_operations"
+      ],
+      "unlock_condition": "file_operations >= 5",
+      "unlocked": false,
+      "training_focus": "提升文档理解能力"
+    },
+    "knowledge_extraction": {
+      "name": "知识提取",
+      "category": "knowledge_acquisition",
+      "tier": "intermediate",
+      "level": 0,
+      "max_level": 30,
+      "proficiency": 0.0,
+      "description": "从非结构化文本中提取结构化知识",
+      "capabilities": [
+        "实体识别",
+        "关系抽取",
+        "知识图谱构建"
+      ],
+      "prerequisites": [
+        "web_scraping_basic",
+        "document_parsing"
+      ],
+      "unlock_condition": "web_scraping_basic >= 10 AND document_parsing >= 10",
+      "unlocked": false,
+      "training_focus": "提升知识结构化能力"
+    },
+    "file_operations": {
+      "name": "文件操作",
+      "category": "world_interaction",
+      "tier": "basic",
+      "level": 0,
+      "max_level": 20,
+      "proficiency": 0.0,
+      "description": "读写、创建、管理文件和目录",
+      "capabilities": [
+        "文件读写",
+        "目录管理",
+        "文件搜索"
+      ],
+      "prerequisites": [],
+      "unlocked": true,
+      "training_focus": "提升文件处理效率"
+    },
+    "code_execution": {
+      "name": "代码执行",
+      "category": "world_interaction",
+      "tier": "basic",
+      "level": 0,
+      "max_level": 20,
+      "proficiency": 0.0,
+      "description": "执行Python和Shell代码，获取执行结果",
+      "capabilities": [
+        "Python代码执行",
+        "Shell命令执行",
+        "执行结果捕获"
+      ],
+      "prerequisites": [
+        "file_operations"
+      ],
+      "unlock_condition": "file_operations >= 5",
+      "unlocked": false,
+      "training_focus": "提升代码执行安全性和效率"
+    },
+    "http_client": {
+      "name": "HTTP客户端",
+      "category": "world_interaction",
+      "tier": "basic",
+      "level": 0,
+      "max_level": 20,
+      "proficiency": 0.0,
+      "description": "发起HTTP请求，与Web服务交互",
+      "capabilities": [
+        "GET/POST请求",
+        "请求头定制",
+        "Cookie管理"
+      ],
+      "prerequisites": [],
+      "unlocked": true,
+      "training_focus": "提升网络交互能力"
+    },
+    "data_persistence": {
+      "name": "数据持久化",
+      "category": "world_interaction",
+      "tier": "basic",
+      "level": 0,
+      "max_level": 20,
+      "proficiency": 0.0,
+      "description": "将数据持久化存储到本地或远程",
+      "capabilities": [
+        "JSON/YAML存储",
+        "SQLite操作",
+        "知识库管理"
+      ],
+      "prerequisites": [
+        "file_operations"
+      ],
+      "unlock_condition": "file_operations >= 5",
+      "unlocked": false,
+      "training_focus": "提升数据管理能力"
+    },
+    "external_service_integration": {
+      "name": "外部服务集成",
+      "category": "world_interaction",
+      "tier": "intermediate",
+      "level": 0,
+      "max_level": 30,
+      "proficiency": 0.0,
+      "description": "集成邮件、消息、云服务等外部服务",
+      "capabilities": [
+        "邮件发送",
+        "消息推送",
+        "云存储操作"
+      ],
+      "prerequisites": [
+        "api_integration",
+        "http_client"
+      ],
+      "unlock_condition": "api_integration >= 10 AND http_client >= 10",
+      "unlocked": false,
+      "training_focus": "扩展外部交互渠道"
+    },
+    "code_generation": {
+      "name": "代码生成",
+      "category": "self_evolution",
+      "tier": "basic",
+      "level": 0,
+      "max_level": 20,
+      "proficiency": 0.0,
+      "description": "根据需求生成代码，创建新技能",
+      "capabilities": [
+        "函数生成",
+        "类生成",
+        "技能代码生成"
+      ],
+      "prerequisites": [
+        "code_execution"
+      ],
+      "unlock_condition": "code_execution >= 5",
+      "unlocked": false,
+      "training_focus": "提升代码生成质量"
+    },
+    "code_analysis": {
+      "name": "代码分析",
+      "category": "self_evolution",
+      "tier": "basic",
+      "level": 0,
+      "max_level": 20,
+      "proficiency": 0.0,
+      "description": "分析代码结构、质量和潜在问题",
+      "capabilities": [
+        "语法分析",
+        "依赖分析",
+        "问题检测"
+      ],
+      "prerequisites": [
+        "code_execution"
+      ],
+      "unlock_condition": "code_execution >= 5",
+      "unlocked": false,
+      "training_focus": "提升代码理解能力"
+    },
+    "self_repair": {
+      "name": "自我修复",
+      "category": "self_evolution",
+      "tier": "intermediate",
+      "level": 0,
+      "max_level": 30,
+      "proficiency": 0.0,
+      "description": "检测并修复自身代码问题",
+      "capabilities": [
+        "错误检测",
+        "自动修复",
+        "回滚机制"
+      ],
+      "prerequisites": [
+        "code_generation",
+        "code_analysis"
+      ],
+      "unlock_condition": "code_generation >= 10 AND code_analysis >= 10",
+      "unlocked": false,
+      "training_focus": "提升系统稳定性"
+    },
+    "strategy_optimization": {
+      "name": "策略优化",
+      "category": "self_evolution",
+      "tier": "advanced",
+      "level": 0,
+      "max_level": 50,
+      "proficiency": 0.0,
+      "description": "优化决策策略和执行流程",
+      "capabilities": [
+        "效率分析",
+        "策略调整",
+        "A/B测试"
+      ],
+      "prerequisites": [
+        "self_repair"
+      ],
+      "unlock_condition": "self_repair >= 15",
+      "unlocked": false,
+      "training_focus": "持续自我优化"
+    }
+  },
+  "optimization_history": []
+}
