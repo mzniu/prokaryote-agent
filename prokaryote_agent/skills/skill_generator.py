@@ -507,21 +507,24 @@ class SkillGenerator:
     ) -> Dict[str, Any]:
         """
         记录训练失败并分析原因
-        
-        当连续失败次数超过阈值时，生成技能优化建议。
-        
+
+        当连续失败次数超过阈值时，自动触发 AI 技能修复。
+
         Args:
             skill_id: 技能ID
             level: 当前等级
             eval_result: 评估结果
             execution_result: 执行结果
-            
+
         Returns:
-            优化信息，包含连续失败次数和优化建议
+            优化信息，包含连续失败次数、优化建议和修复结果
         """
         try:
-            from .evolution.skill_optimizer import record_training_result
-            
+            from .evolution.skill_optimizer import (
+                record_training_result,
+                get_skill_optimizer,
+            )
+
             result = record_training_result(
                 skill_id=skill_id,
                 level=level,
@@ -529,21 +532,66 @@ class SkillGenerator:
                 eval_result=eval_result,
                 execution_result=execution_result
             )
-            
+
             if result and result.get('should_optimize'):
+                consecutive = result.get('consecutive_failures', 0)
                 self.logger.warning(
-                    f"技能 {skill_id} 需要优化，连续失败 {result.get('consecutive_failures', 0)} 次"
+                    f"技能 {skill_id} 需要优化，"
+                    f"连续失败 {consecutive} 次"
                 )
-                
+
                 # 输出优化建议
                 suggestions = result.get('optimization_suggestions', [])
                 if suggestions:
-                    self.logger.info(f"优化建议:")
+                    self.logger.info("优化建议:")
                     for i, s in enumerate(suggestions[:3], 1):
-                        self.logger.info(f"  {i}. [{s.get('strategy')}] {s.get('description')}")
-                        
+                        self.logger.info(
+                            f"  {i}. [{s.get('strategy')}] "
+                            f"{s.get('description')}"
+                        )
+
+                # 自动触发 AI 修复
+                failure_analysis = result.get('failure_analysis', {})
+                self.logger.info(
+                    f"🤖 触发 AI 自修复: {skill_id}"
+                )
+
+                optimizer = get_skill_optimizer()
+                repair_result = optimizer.ai_repair_skill(
+                    skill_id=skill_id,
+                    failure_analysis=failure_analysis,
+                    suggestions=suggestions,
+                )
+
+                result['repair_result'] = repair_result
+
+                if repair_result.get('success'):
+                    self.logger.info(
+                        f"✅ AI 自修复成功: {skill_id}"
+                    )
+                    changes = repair_result.get(
+                        'changes_summary', [])
+                    for ch in changes[:5]:
+                        self.logger.info(f"   {ch}")
+
+                    # 重新加载技能到库中
+                    if self.library:
+                        # 清除旧缓存
+                        if skill_id in self.library.skills:
+                            del self.library.skills[skill_id]
+                        reloaded = self.library.load_skill(skill_id)
+                        if reloaded:
+                            self.logger.info(
+                                f"   技能已重新加载"
+                            )
+                else:
+                    self.logger.warning(
+                        f"❌ AI 自修复失败: "
+                        f"{repair_result.get('error')}"
+                    )
+
             return result or {}
-            
+
         except ImportError:
             self.logger.debug("技能优化模块未加载")
             return {}

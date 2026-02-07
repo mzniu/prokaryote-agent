@@ -18,6 +18,7 @@ import time
 import signal
 import logging
 import json
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, List, Any
@@ -338,9 +339,10 @@ class SimpleEvolutionAgent:
         )
         self.logger = logging.getLogger(__name__)
 
-        # 信号处理
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
+        # 信号处理（仅主线程可注册）
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT, self._signal_handler)
+            signal.signal(signal.SIGTERM, self._signal_handler)
 
     def _load_config(self) -> Dict[str, Any]:
         """加载配置"""
@@ -352,7 +354,7 @@ class SimpleEvolutionAgent:
 
     def _signal_handler(self, signum, frame):
         """信号处理"""
-        print("\n⚠️  收到停止信号，正在关闭...")
+        self.logger.warning("⚠️  收到停止信号，正在关闭...")
         self.running = False
 
     def _init_skill_trees(self):
@@ -387,7 +389,7 @@ class SimpleEvolutionAgent:
         elif domain_path and domain_path.exists():
             self._init_single_tree_mode(domain_path, specialization)
         else:
-            print("⚠️  未配置有效的技能树路径")
+            self.logger.warning("⚠️  未配置有效的技能树路径")
 
     def _init_dual_tree_mode(self, general_path: Path, domain_path: Path, config: dict):  # noqa: E501
         """初始化双树模式（推荐）"""
@@ -437,12 +439,12 @@ class SimpleEvolutionAgent:
         general_pct = int(priority['general'] * 100)
         domain_pct = int(priority['domain'] * 100)
 
-        print(f"✅ 双树进化模式已启用: {domain}")
-        print(f"   📚 通用技能树: {general_unlocked}/{len(general_skills)} 已解锁")
-        print(f"   🎯 领域技能树: {domain_unlocked}/{len(domain_skills)} 已解锁")
-        print(f"   📊 当前阶段: {stage}({stage_name_cn})")
-        print(f"   ⚖️  进化优先级: 通用{general_pct}% / 领域{domain_pct}%")
-        print(f"   📈 总技能等级: {total_level}")
+        self.logger.info(f"✅ 双树进化模式已启用: {domain}")
+        self.logger.info(f"   📚 通用技能树: {general_unlocked}/{len(general_skills)} 已解锁")
+        self.logger.info(f"   🎯 领域技能树: {domain_unlocked}/{len(domain_skills)} 已解锁")
+        self.logger.info(f"   📊 当前阶段: {stage}({stage_name_cn})")
+        self.logger.info(f"   ⚖️  进化优先级: 通用{general_pct}% / 领域{domain_pct}%")
+        self.logger.info(f"   📈 总技能等级: {total_level}")
 
     def _init_single_tree_mode(self, domain_path: Path, config: dict):
         """初始化单树模式（向后兼容）"""
@@ -450,49 +452,47 @@ class SimpleEvolutionAgent:
         self.skill_tree_manager = SkillTreeManager(str(domain_path))
         tree_stats = self.skill_tree_manager.get_statistics()
 
-        print(f"✅ 技能树已加载: {domain}")
-        print(f"   - 总技能: {tree_stats['total']}")
-        print(f"   - 已解锁: {tree_stats['unlocked']}")
-        print(f"   - 待解锁: {tree_stats['locked']}")
+        self.logger.info(f"✅ 技能树已加载: {domain}")
+        self.logger.info(f"   - 总技能: {tree_stats['total']}")
+        self.logger.info(f"   - 已解锁: {tree_stats['unlocked']}")
+        self.logger.info(f"   - 待解锁: {tree_stats['locked']}")
 
     def initialize(self) -> bool:
         """初始化系统"""
-        print("=" * 50)
-        print("🧬 Prokaryote Agent - 进化系统")
-        print("=" * 50)
+        self.logger.info("=" * 50)
+        self.logger.info("🧬 Prokaryote Agent - 进化系统")
+        self.logger.info("=" * 50)
 
         # 初始化核心系统
-        print("\n[1/4] 初始化核心系统...")
+        self.logger.info("[1/4] 初始化核心系统...")
         result = init_prokaryote()
         if not result.get('success'):
-            print(f"❌ 初始化失败: {result.get('msg')}")
+            self.logger.error(f"❌ 初始化失败: {result.get('msg')}")
             return False
-        print("✅ 核心系统初始化成功")
+        self.logger.info("✅ 核心系统初始化成功")
 
         # 加载目标
-        print("\n[2/4] 加载进化目标...")
+        self.logger.info("[2/4] 加载进化目标...")
         self.goal_manager = EvolutionGoalManager(self.goal_file)
         goals = self.goal_manager.load_goals()
 
         stats = self.goal_manager.get_statistics()
-        print(f"✅ 已加载 {stats['total']} 个目标")
-        print(f"   - 待执行: {stats['pending']}")
-        print(f"   - 已完成: {stats['completed']}")
+        self.logger.info(f"✅ 已加载 {stats['total']} 个目标")
+        self.logger.info(f"   - 待执行: {stats['pending']}")
+        self.logger.info(f"   - 已完成: {stats['completed']}")
 
         # 加载技能树（支持双树模式）
-        print("\n[3/4] 加载技能树...")
+        self.logger.info("[3/4] 加载技能树...")
         self._init_skill_trees()
 
         # 初始化技能库和生成器
-        print("\n[4/4] 初始化技能库...")
-        self.skill_library = SkillLibrary()
-        self.skill_generator = SkillGenerator(self.skill_library)
+        self.logger.info("[4/4] 初始化技能库...")
         self.skill_library = SkillLibrary()
         self.skill_generator = SkillGenerator(self.skill_library)
         lib_stats = self.skill_library.get_statistics()
-        print(f"✅ 技能库已加载")
-        print(f"   - 已学习技能: {lib_stats['total_skills']}")
-        print(f"   - 总执行次数: {lib_stats['total_executions']}")
+        self.logger.info("✅ 技能库已加载")
+        self.logger.info(f"   - 已学习技能: {lib_stats['total_skills']}")
+        self.logger.info(f"   - 总执行次数: {lib_stats['total_executions']}")
 
         return True
 
@@ -501,8 +501,7 @@ class SimpleEvolutionAgent:
         if not self.initialize():
             return
 
-        print(f"\n🚀 开始进化循环 (间隔: {self.interval}秒)")
-        print("按 Ctrl+C 停止\n")
+        self.logger.info(f"🚀 开始进化循环 (间隔: {self.interval}秒)")
 
         self.running = True
 
@@ -520,9 +519,9 @@ class SimpleEvolutionAgent:
                 self.logger.error(f"进化循环错误: {e}")
                 time.sleep(5)
 
-        print("\n👋 进化系统已停止")
-        print(f"   - 目标完成: {self.evolution_count}")
-        print(f"   - 技能进化: {self.skill_evolution_count}")
+        self.logger.info("👋 进化系统已停止")
+        self.logger.info(f"   - 目标完成: {self.evolution_count}")
+        self.logger.info(f"   - 技能进化: {self.skill_evolution_count}")
 
     def _evolution_cycle(self):
         """单次进化循环"""
@@ -942,6 +941,25 @@ class SimpleEvolutionAgent:
             training_task = result.get('training_task', '')
             if training_task:
                 self.logger.info(f"   需要重新练习: {training_task}")
+
+            # 检查是否进行了 AI 自修复
+            opt_info = result.get('optimization_info', {})
+            repair = opt_info.get('repair_result', {})
+            if repair.get('success'):
+                self.logger.info("   🔄 AI 已修复技能代码，立即重试训练...")
+                # 重试一次训练
+                retry_result = self.skill_generator.upgrade_skill(
+                    skill_id, target_level
+                )
+                if retry_result['success']:
+                    self.logger.info(f"   ✅ 修复后训练通过!")
+                    return True
+                else:
+                    self.logger.warning(
+                        f"   修复后仍未通过: "
+                        f"{retry_result.get('error')}"
+                    )
+
             return False
 
     def _extract_capabilities(self, skill: Dict) -> List[str]:
