@@ -20,7 +20,7 @@
 
 import json
 import logging
-import random
+import re
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
@@ -149,6 +149,7 @@ class SkillGenerator:
         self.use_core_enzymes = use_core_enzymes and CORE_ENZYMES_AVAILABLE
         self._pipeline = None
         self._evaluator = None
+        self._ai_adapter = None
 
         if self.use_core_enzymes:
             self.logger.info("技能生成器: 使用核心酶模式")
@@ -173,6 +174,17 @@ class SkillGenerator:
         if self._evaluator is None and EVALUATION_AVAILABLE:
             self._evaluator = TrainingEvaluator()
         return self._evaluator
+
+    @property
+    def ai_adapter(self):
+        """获取AI适配器（延迟加载）"""
+        if self._ai_adapter is None:
+            try:
+                from prokaryote_agent.ai_adapter import AIAdapter
+                self._ai_adapter = AIAdapter()
+            except Exception:
+                pass
+        return self._ai_adapter
 
     def learn_skill(self, skill_definition: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -300,7 +312,10 @@ class SkillGenerator:
             }
 
         # 获取训练任务（根据等级调整难度）
-        training_task = self._get_training_task(skill_id, skill.metadata.domain, current_level)
+        training_task = self._get_training_task(
+            skill_id, skill.metadata.domain, current_level,
+            skill_definition=skill_definition
+        )
 
         self.logger.info(f"执行训练任务: {training_task['name']}")
 
@@ -367,7 +382,8 @@ class SkillGenerator:
         enhancements = self._get_level_enhancements(
             skill.metadata.tier,
             current_level,
-            target_level
+            target_level,
+            skill_name=skill.metadata.name
         )
 
         # 升级技能
@@ -697,7 +713,11 @@ class SkillGenerator:
                 'level': new_level,
                 'enhancements': enhancements,
                 # 根据等级添加特定能力要求
-                'requirements': self._get_level_requirements(new_level)
+                'requirements': self._get_level_requirements(
+                    new_level,
+                    skill_name=skill.metadata.name,
+                    domain=skill.metadata.domain
+                )
             }
 
             # 调用核心酶重新生成代码
@@ -726,22 +746,25 @@ class SkillGenerator:
             self.logger.error(f"代码进化异常: {e}")
             return False
 
-    def _get_level_requirements(self, level: int) -> List[str]:
-        """获取等级对应的能力要求"""
+    def _get_level_requirements(self, level: int,
+                                skill_name: str = '',
+                                domain: str = '') -> List[str]:
+        """获取等级对应的能力要求（根据技能和领域调整）"""
         requirements = []
+        context = skill_name or domain or '技能'
 
         if level >= 5:
-            requirements.append("支持批量处理多个输入")
+            requirements.append(f"{context}支持批量处理多个输入")
         if level >= 10:
-            requirements.append("优先查询本地知识库，减少网络请求")
-            requirements.append("添加结果缓存机制")
+            requirements.append("优先查询本地知识库，减少重复搜索")
+            requirements.append("添加结果缓存和去重机制")
         if level >= 15:
-            requirements.append("支持多维度分析")
-            requirements.append("生成质量评分")
+            requirements.append(f"支持{context}的多维度深度分析")
+            requirements.append("生成质量自评分并据此改进")
         if level >= 20:
-            requirements.append("自适应处理策略")
-            requirements.append("支持增量更新")
-            requirements.append("性能优化")
+            requirements.append("自适应处理策略，根据输入特征选择最优路径")
+            requirements.append("支持增量更新，避免重复计算")
+            requirements.append("对复杂场景的鲁棒处理")
 
         return requirements
 
@@ -754,12 +777,27 @@ class SkillGenerator:
         version_file.write_text(code, encoding='utf-8')
         self.logger.debug(f"版本已保存: {version_file}")
 
-    def _get_training_task(self, skill_id: str, domain: str, level: int) -> Dict[str, Any]:
+    def _get_training_task(self, skill_id: str, domain: str, level: int,
+                           skill_definition: Optional[Dict[str, Any]] = None
+                           ) -> Dict[str, Any]:
         """
         获取训练任务
 
-        根据技能和等级生成适当难度的训练任务
+        优先使用AI生成上下文相关的训练任务，
+        AI不可用时回退到内置任务模板。
         """
+        # 尝试获取历史评估反馈
+        past_feedback = self._get_past_feedback(skill_id)
+
+        # 优先使用AI生成训练任务
+        ai_task = self._generate_ai_training_task(
+            skill_id, domain, level, skill_definition, past_feedback
+        )
+        if ai_task:
+            return ai_task
+
+        # AI不可用，回退到内置任务
+        self.logger.debug(f"使用内置训练任务模板: {skill_id}")
         # 法律领域训练任务
         if domain == 'legal':
             return self._get_legal_training_task(skill_id, level)
@@ -767,6 +805,130 @@ class SkillGenerator:
             return self._get_software_training_task(skill_id, level)
         else:
             return self._get_generic_training_task(skill_id, level)
+
+    def _generate_ai_training_task(
+        self,
+        skill_id: str,
+        domain: str,
+        level: int,
+        skill_definition: Optional[Dict[str, Any]] = None,
+        past_feedback: Optional[List[str]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        使用AI生成上下文相关的训练任务
+
+        根据技能定义、当前等级和历史评估反馈，
+        动态生成难度适当、内容丰富的训练任务。
+
+        Returns:
+            训练任务字典，AI不可用时返回None
+        """
+        adapter = self.ai_adapter
+        if not adapter or not adapter.config.api_key:
+            return None
+
+        # 构建技能上下文
+        if skill_definition:
+            skill_info = (
+                f"- 名称: {skill_definition.get('name', skill_id)}\n"
+                f"- 描述: {skill_definition.get('description', '')}\n"
+                f"- 能力: {', '.join(skill_definition.get('capabilities', []))}\n"
+            )
+        else:
+            skill_info = f"- 技能ID: {skill_id}\n"
+
+        feedback_section = ""
+        if past_feedback:
+            feedback_section = (
+                "\n历史评估反馈（请据此调整训练重点）:\n"
+                + "\n".join(f"- {fb}" for fb in past_feedback[:5])
+            )
+
+        difficulty = min(level // 5 + 1, 5)
+        prompt = f"""你是一个AI技能训练任务生成器。请根据以下信息生成一个恰当的训练任务。
+
+技能信息:
+{skill_info}- 领域: {domain}
+- 当前等级: {level}（目标提升到 {level + 1}）
+- 目标难度: {difficulty}/5
+{feedback_section}
+
+任务设计要求:
+1. 难度与等级匹配：等级0-4为基础，5-9为进阶，10-14为高级，15+为专家
+2. 任务应测试该技能的核心能力
+3. 提供具体、可执行的任务内容（不要抽象描述）
+4. 如果有历史反馈，针对性地设计任务来弥补薄弱环节
+
+请以严格的JSON格式返回，不要包含其他文字:
+{{
+    "name": "任务名称（简短描述）",
+    "type": "research 或 drafting 或 analysis 或 code_review 或 generic",
+    "difficulty": {difficulty},
+    "description": "详细任务描述",
+    "query": "如果是research类型，填写具体查询内容",
+    "expected_count": 2,
+    "sources": ["查询来源列表，根据领域填写"],
+    "doc_type": "如果是drafting类型，填写文书类型",
+    "sections": ["如果是drafting类型，列出需要包含的章节"],
+    "case_type": "如果是analysis类型，填写案例类型",
+    "focus": "如果是analysis类型，填写分析重点"
+}}"""
+
+        try:
+            result = adapter._call_ai(prompt)
+            if result.get('success') and result.get('content'):
+                content = result['content'].strip()
+
+                # 尝试从代码块中提取JSON
+                json_match = re.search(
+                    r'```(?:json)?\s*([\s\S]*?)```', content
+                )
+                if json_match:
+                    content = json_match.group(1).strip()
+
+                task = json.loads(content)
+
+                # 确保必要字段
+                if 'name' not in task:
+                    task['name'] = f'AI训练任务 Lv.{level + 1}'
+                if 'type' not in task:
+                    task['type'] = 'generic'
+                if 'difficulty' not in task:
+                    task['difficulty'] = difficulty
+
+                self.logger.info(
+                    f"AI生成训练任务: {task['name']} "
+                    f"(类型: {task['type']})"
+                )
+                return task
+
+        except json.JSONDecodeError as e:
+            self.logger.warning(f"AI训练任务JSON解析失败: {e}")
+        except Exception as e:
+            self.logger.warning(f"AI生成训练任务失败: {e}")
+
+        return None
+
+    def _get_past_feedback(self, skill_id: str) -> List[str]:
+        """获取技能的历史评估反馈，用于指导后续训练"""
+        try:
+            from .evolution.skill_optimizer import get_skill_optimizer
+            optimizer = get_skill_optimizer()
+            failures = optimizer.failure_history.get(skill_id, [])
+            if failures:
+                feedback = []
+                for entry in failures[-3:]:
+                    suggestions = entry.get(
+                        'improvement_suggestions', []
+                    )
+                    feedback.extend(suggestions[:2])
+                    reason = entry.get('reason', '')
+                    if reason:
+                        feedback.append(reason)
+                return feedback[:8]
+        except (ImportError, Exception):
+            pass
+        return []
 
     def _get_legal_training_task(self, skill_id: str, level: int) -> Dict[str, Any]:
         """获取法律领域训练任务"""
@@ -855,7 +1017,7 @@ class SkillGenerator:
                 result = skill.execute(
                     context=context,
                     query=task.get('query', ''),
-                    sources=['法律法规', '司法解释', '判例']
+                    sources=task.get('sources', [])
                 )
 
                 if result.get('success'):
@@ -930,24 +1092,48 @@ class SkillGenerator:
                     return {'passed': False, 'reason': result.get('error', '执行失败')}
 
             else:
-                # 通用训练：直接通过（模拟）
-                # 根据难度有一定概率失败
-                difficulty = task.get('difficulty', 1)
-                success_rate = max(0.7, 1.0 - difficulty * 0.05)
-                passed = random.random() < success_rate
-                return {
-                    'passed': passed,
-                    'difficulty': difficulty,
-                    'reason': '训练完成' if passed else '训练失败，需要更多练习',
-                    'outputs': context.get_outputs()
-                }
+                # 通用训练：尝试实际执行技能
+                query = task.get('query', task.get('description', ''))
+                try:
+                    result = skill.execute(
+                        context=context,
+                        query=query,
+                        input=task.get('input', {}),
+                        **{k: v for k, v in task.items()
+                           if k not in ('name', 'type', 'difficulty',
+                                        'description', 'query', 'input')}
+                    )
+
+                    if result.get('success'):
+                        res = result.get('result', {})
+                        return {
+                            'passed': True,
+                            'result': res,
+                            'reason': '训练执行完成',
+                            'outputs': context.get_outputs()
+                        }
+                    else:
+                        return {
+                            'passed': False,
+                            'reason': result.get('error', '执行失败'),
+                            'outputs': context.get_outputs()
+                        }
+                except Exception as exec_err:
+                    self.logger.warning(
+                        f"通用训练执行失败: {exec_err}"
+                    )
+                    return {
+                        'passed': False,
+                        'reason': f'执行异常: {exec_err}',
+                        'outputs': context.get_outputs()
+                    }
 
         except Exception as e:
             self.logger.error(f"训练执行异常: {e}")
             return {'passed': False, 'reason': str(e)}
 
     def _generate_skill_code(self, definition: Dict[str, Any]) -> str:
-        """生成技能代码"""
+        """生成技能代码 - 优先使用AI，回退到内置模板"""
         skill_id = definition['id']
         skill_name = definition['name']
         tier = definition.get('tier', 'basic')
@@ -958,16 +1144,32 @@ class SkillGenerator:
         # 转换为类名
         class_name = ''.join(word.capitalize() for word in skill_id.split('_'))
 
-        # 根据领域生成具体实现
-        execute_code, validate_code, execute_docstring, save_output_code = self._generate_domain_code(
-            domain, skill_id, skill_name, capabilities
+        # 优先使用AI生成领域代码
+        ai_result = self._generate_ai_domain_code(
+            domain, skill_id, skill_name, description, capabilities
         )
+
+        if ai_result:
+            execute_code, validate_code, execute_docstring, save_output_code = ai_result
+            self.logger.info(f"AI生成技能代码: {skill_id}")
+        else:
+            # 回退到内置模板
+            self.logger.debug(f"使用内置模板生成代码: {skill_id}")
+            execute_code, validate_code, execute_docstring, save_output_code = (
+                self._generate_domain_code(
+                    domain, skill_id, skill_name, capabilities
+                )
+            )
 
         # 格式化能力列表
         capabilities_str = '\n'.join(f"- {cap}" for cap in capabilities)
 
         # 生成示例
-        examples = self._generate_examples(domain, skill_id)
+        examples = self._generate_examples(
+            domain, skill_id,
+            skill_name=skill_name,
+            capabilities=capabilities
+        )
 
         code = SKILL_TEMPLATE.format(
             skill_name=skill_name,
@@ -987,6 +1189,123 @@ class SkillGenerator:
         )
 
         return code
+
+    def _generate_ai_domain_code(
+        self,
+        domain: str,
+        skill_id: str,
+        skill_name: str,
+        description: str,
+        capabilities: List[str]
+    ) -> Optional[tuple]:
+        """
+        使用AI生成技能的核心代码片段
+
+        生成 execute_code, validate_code, docstring, save_output_code 四部分，
+        然后嵌入到标准的SKILL_TEMPLATE中。
+
+        Returns:
+            (execute_code, validate_code, docstring, save_output_code)
+            AI不可用时返回None
+        """
+        adapter = self.ai_adapter
+        if not adapter or not adapter.config.api_key:
+            return None
+
+        caps_str = ', '.join(capabilities) if capabilities else '通用'
+
+        prompt = f"""你是一个Python技能代码生成器。请为以下技能生成核心实现代码。
+
+技能信息:
+- ID: {skill_id}
+- 名称: {skill_name}
+- 领域: {domain}
+- 描述: {description}
+- 能力: {caps_str}
+
+你需要生成4个代码片段，它们会被嵌入到一个Skill类模板中：
+
+1. **execute_code**: execute方法的实现体（缩进8格）
+   - 可以使用 `kwargs` 获取输入参数
+   - 可以使用 `context` (SkillContext) 访问知识库和保存产出物
+   - 可以导入这些工具模块:
+     - `from prokaryote_agent.skills.web_tools import web_search, deep_search, fetch_webpage, search_wikipedia`
+     - `from prokaryote_agent.knowledge import store_knowledge, search_knowledge, smart_search`
+   - 最终结果存储在 `result` 变量中（dict类型）
+
+2. **validate_code**: validate_input方法的实现体（缩进8格）
+   - 验证kwargs中的输入参数，返回bool
+
+3. **docstring**: execute方法的docstring内容
+   - 描述Args和Returns
+
+4. **save_output_code**: _save_output方法的实现体（缩进8格）
+   - 使用 `context.save_output(output_type=..., title=..., content=..., category=...)`
+   - `result` 变量包含execute的返回结果
+
+重要要求:
+- 代码必须是真正可执行的Python代码
+- 使用web_search/deep_search进行联网搜索获取信息
+- 使用store_knowledge/search_knowledge进行知识库操作
+- 不要使用占位符或TODO注释
+- 代码应专注于"{skill_name}"的实际功能实现
+
+请以JSON格式返回，不要其他文字:
+{{
+    "execute_code": "python代码字符串",
+    "validate_code": "python代码字符串",
+    "docstring": "docstring内容",
+    "save_output_code": "python代码字符串"
+}}"""
+
+        try:
+            result = adapter._call_ai(prompt)
+            if not result.get('success') or not result.get('content'):
+                return None
+
+            content = result['content'].strip()
+
+            # 提取JSON
+            json_match = re.search(
+                r'```(?:json)?\s*([\s\S]*?)```', content
+            )
+            if json_match:
+                content = json_match.group(1).strip()
+
+            parts = json.loads(content)
+
+            execute_code = parts.get('execute_code', '')
+            validate_code = parts.get('validate_code', '')
+            docstring = parts.get('docstring', '')
+            save_output_code = parts.get('save_output_code', '')
+
+            if not execute_code:
+                self.logger.warning("AI未生成有效的execute_code")
+                return None
+
+            # 验证生成的代码片段语法（简单检查）
+            test_code = f"def _test():\n    {execute_code}"
+            try:
+                compile(test_code, '<ai_generated>', 'exec')
+            except SyntaxError as e:
+                self.logger.warning(
+                    f"AI生成代码语法错误: {e}"
+                )
+                return None
+
+            self.logger.info(
+                f"AI生成技能代码成功: {skill_id} "
+                f"(execute: {len(execute_code)} chars)"
+            )
+            return (execute_code, validate_code, docstring,
+                    save_output_code)
+
+        except json.JSONDecodeError as e:
+            self.logger.warning(f"AI技能代码JSON解析失败: {e}")
+        except Exception as e:
+            self.logger.warning(f"AI生成技能代码失败: {e}")
+
+        return None
 
     def _generate_domain_code(self, domain: str, skill_id: str,
                                skill_name: str, capabilities: List[str]) -> tuple:
@@ -1616,24 +1935,38 @@ class SkillGenerator:
 
         return execute_code, validate_code, docstring, save_output_code
 
-    def _generate_examples(self, domain: str, skill_id: str) -> List[Dict[str, Any]]:
-        """生成使用示例"""
+    def _generate_examples(self, domain: str, skill_id: str,
+                           skill_name: str = '',
+                           capabilities: Optional[List[str]] = None
+                           ) -> List[Dict[str, Any]]:
+        """生成使用示例（根据技能信息动态构建）"""
+        examples = []
 
-        if domain == 'legal':
-            if 'research' in skill_id:
-                return [
-                    {'input': {'query': '劳动合同解除'}, 'description': '检索劳动合同相关法规'},
-                    {'input': {'query': '知识产权侵权', 'sources': ['判例']}, 'description': '检索知识产权判例'}
-                ]
-            elif 'drafting' in skill_id:
-                return [
-                    {'input': {'doc_type': '劳动合同'}, 'description': '起草劳动合同'},
-                    {'input': {'doc_type': '保密协议'}, 'description': '起草保密协议'}
-                ]
+        if 'research' in skill_id or '检索' in (skill_name or ''):
+            examples.append({
+                'input': {'query': f'{domain}领域相关查询'},
+                'description': f'使用{skill_name or skill_id}进行检索'
+            })
+        elif 'drafting' in skill_id or '文书' in (skill_name or ''):
+            examples.append({
+                'input': {'doc_type': '文书'},
+                'description': f'使用{skill_name or skill_id}起草文书'
+            })
+        elif 'analysis' in skill_id or '分析' in (skill_name or ''):
+            examples.append({
+                'input': {'case_text': '示例案例文本'},
+                'description': f'使用{skill_name or skill_id}进行分析'
+            })
 
-        return [
-            {'input': {}, 'description': '基本使用示例'}
-        ]
+        if not examples:
+            cap = (capabilities[0] if capabilities
+                   else '基本功能')
+            examples.append({
+                'input': {'query': cap},
+                'description': f'{skill_name or skill_id}使用示例'
+            })
+
+        return examples
 
     def _validate_code(self, code: str) -> bool:
         """验证代码语法"""
@@ -1645,18 +1978,28 @@ class SkillGenerator:
             return False
 
     def _get_level_enhancements(self, tier: str, from_level: int,
-                                 to_level: int) -> List[str]:
-        """获取等级提升带来的增强"""
+                                to_level: int,
+                                skill_name: str = '') -> List[str]:
+        """获取等级提升带来的增强（根据技能上下文调整）"""
         enhancements = []
+        context = skill_name or tier
 
         for level in range(from_level + 1, to_level + 1):
             if level == 5:
-                enhancements.append("解锁批量处理能力")
+                enhancements.append(
+                    f"{context}解锁批量处理能力"
+                )
             elif level == 10:
-                enhancements.append("提升处理速度 +20%")
+                enhancements.append(
+                    f"{context}启用知识库缓存加速"
+                )
             elif level == 15:
-                enhancements.append("解锁高级分析能力")
+                enhancements.append(
+                    f"{context}解锁高级深度分析能力"
+                )
             elif level == 20:
-                enhancements.append("达到层级上限，可解锁进阶技能")
+                enhancements.append(
+                    f"{context}达到层级上限，可解锁进阶技能"
+                )
 
         return enhancements
