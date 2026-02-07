@@ -334,6 +334,18 @@ class SkillGenerator:
                 'optimization_info': optimization_info  # 新增：优化建议
             }
 
+        # 训练通过 - 记录成功，清除失败计数器
+        try:
+            from .evolution.skill_optimizer import record_training_result
+            record_training_result(
+                skill_id=skill_id,
+                level=current_level,
+                success=True,
+                eval_result=evaluation_result
+            )
+        except ImportError:
+            pass
+
         # 训练通过，获取增强
         enhancements = self._get_level_enhancements(
             skill.metadata.tier,

@@ -112,7 +112,14 @@ class SkillOptimizer:
         # 分析失败原因
         failure_analysis = self.analyze_failures(skill_id)
 
-        should_optimize = consecutive >= self.max_failures
+        # 灾难性失败检测：得分极低说明技能代码有根本性问题
+        score = eval_result.get('score', 0)
+        is_catastrophic = score <= 1.0
+
+        should_optimize = (
+            consecutive >= self.max_failures
+            or is_catastrophic
+        )
 
         result = {
             'consecutive_failures': consecutive,
@@ -121,12 +128,21 @@ class SkillOptimizer:
         }
 
         if should_optimize:
-            logger.warning(
-                "技能 %s 连续失败 %d 次，建议进行优化",
-                skill_id, consecutive
-            )
+            if is_catastrophic:
+                logger.warning(
+                    "技能 %s 灾难性失败 (得分 %.1f)，"
+                    "立即触发 AI 修复",
+                    skill_id, score
+                )
+            else:
+                logger.warning(
+                    "技能 %s 连续失败 %d 次，建议进行优化",
+                    skill_id, consecutive
+                )
             result['optimization_suggestions'] = \
-                self.generate_optimization_suggestions(skill_id, failure_analysis)
+                self.generate_optimization_suggestions(
+                    skill_id, failure_analysis
+                )
 
         return result
 
