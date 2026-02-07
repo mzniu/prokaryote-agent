@@ -1,51 +1,156 @@
 # prokaryote-agent 原智
 
-**类生物原始进化型Agent内核**
+**类生物原始进化型Agent内核** | [English](docs/README_EN.md)
 
 原智（YuanZhi）- 受原核生物启发的自主进化Agent内核，具备"感知-修复-变异-筛选-复制"完整进化闭环，以人类预设要求为进化指引。
 
-## 当前版本
+## ✨ 核心特性
 
-**V0.1 - 原始存活版本**
+- 🧬 **双树进化系统** - 通用技能 + 专业技能并行进化
+- 🤖 **AI自我增长** - 技能树随进化自动扩展新技能
+- 🎯 **目标驱动** - 基于 Markdown 定义进化目标
+- 🔄 **迭代式进化** - 多阶段渐进式能力开发
+- 💾 **知识固化** - 训练过程中自动积累领域知识
+- 🛡️ **自我修复** - 异常检测与自动恢复
 
-核心功能：
-- ✅ 状态感知：实时监测内核自身运行状态与环境状态
-- ✅ 自我修复：异常检测与自动修复，维持稳定运行
-- ✅ 本地存储：基于文件系统的轻量化存储方案
-- ✅ 极简接口：4个核心API，简单易用
+## 🚀 快速开始
 
-## 快速开始
+### 环境要求
+
+- Python 3.8+（推荐 3.11+）
+- DeepSeek API Key（用于 AI 能力）
 
 ### 安装
 
 ```bash
 # 克隆仓库
-git clone <repository-url>
+git clone https://github.com/mzniu/prokaryote-agent.git
 cd prokaryote-agent
 
-# 安装依赖（可选）
+# 创建虚拟环境（推荐）
+python -m venv venv
+venv\Scripts\activate  # Windows
+# source venv/bin/activate  # Linux/Mac
+
+# 安装依赖
 pip install -r requirements.txt
 ```
 
-### 启动原智（推荐方式）⭐
+### 配置 API Key
 
 ```bash
-# 启动原智 - 后台自动进化 + 交互式命令
-python start.py
+# 复制配置模板
+cp prokaryote_agent/secrets.example.json prokaryote_agent/secrets.json
 
-# 自定义配置
-python start.py --interval 30 --mode iterative --auto-enable
+# 编辑 secrets.json，填入你的 API Key
+{
+  "deepseek_api_key": "sk-your-api-key-here"
+}
 ```
 
-**特性**：
-- 🔄 后台持续自动进化（默认60秒间隔）
-- 💬 交互式命令界面（status/goals/list/evolve等）
-- 📝 完整日志记录（终端 + 文件）
-- 🎯 基于 evolution_goals.md 的目标驱动
-- 🔁 迭代式多阶段进化（默认模式）
-- 🛠️ 实时能力管理和系统监控
+### 启动原智
 
-**启动后可用命令**：
+```bash
+# 推荐方式：交互式启动
+python start.py
+
+# 或者直接运行进化循环
+python simple_agent.py
+```
+
+## 🧬 双树进化系统
+
+原智采用独特的**双树进化架构**，将技能分为通用技能和专业技能两个维度：
+
+### 进化优先级
+
+| 阶段 | 等级范围 | 通用技能 | 专业技能 |
+|------|---------|---------|---------|
+| 🌱 萌芽期 | 0-30 | **80%** | 20% |
+| 🌿 成长期 | 30-100 | **60%** | 40% |
+| 🌳 成熟期 | 100-300 | 40% | **60%** |
+| 🏆 专精期 | 300+ | 25% | **75%** |
+
+### 通用技能（15个初始技能）
+
+```
+📚 知识获取能力
+├── 网络搜索、网页抓取（基础/高级）
+├── API集成、文档解析、知识提取
+│
+🌐 外界交互能力
+├── 文件操作、代码执行、HTTP客户端
+├── 数据持久化、外部服务集成
+│
+🧬 自我进化能力
+├── 代码生成、代码分析
+└── 自我修复、策略优化
+```
+
+### 专业技能（以法律领域为例）
+
+```
+⚖️ 法律专家技能树
+├── 基础层：法律检索、文书起草、案例分析
+├── 中级层：合同审查、法规解读、法律推理
+└── 高级层：诉讼策略、法律顾问
+```
+
+### AI 自我增长
+
+通用技能树能够**自动扩展**！每当技能达到里程碑（5/10/15/20级）或每5次进化后，AI 会分析当前能力组合，发现并添加新技能：
+
+```
+进化成功 → 触发优化 → AI分析 → 发现新技能 → 自动添加
+```
+
+## 📁 项目结构
+
+```
+prokaryote-agent/
+├── start.py                 # 统一启动入口 ⭐
+├── simple_agent.py          # 简化版进化脚本
+├── evolution_goals.md       # 进化目标定义
+│
+├── prokaryote_agent/        # 核心代码包
+│   ├── ai_adapter.py        # AI 适配器（DeepSeek）
+│   ├── goal_manager.py      # 目标管理器
+│   ├── daemon_config.json   # 守护进程配置
+│   │
+│   ├── skills/              # 技能系统
+│   │   ├── skill_generator.py   # 技能生成器
+│   │   ├── skill_executor.py    # 技能执行器
+│   │   ├── evaluation/          # 训练评估
+│   │   └── library/             # 技能库（自动生成）
+│   │
+│   ├── specialization/      # 专业化进化
+│   │   ├── skill_coordinator.py     # 双树协调器
+│   │   ├── general_tree_optimizer.py # AI优化器
+│   │   └── domains/                  # 技能树定义
+│   │       ├── general_tree.json    # 通用技能树
+│   │       └── legal_tree.json      # 法律技能树
+│   │
+│   ├── knowledge/           # 知识库（自动积累）
+│   └── core/                # 核心模块
+│
+├── docs/                    # 文档
+│   ├── PRD.md              # 产品需求
+│   ├── 概要设计.md          # 系统设计
+│   ├── 通用技能树设计.md    # 技能树设计 ⭐
+│   └── 启动说明.md          # 使用指南
+│
+└── tests/                   # 测试
+```
+
+## 🎮 使用方式
+
+### 方式1：交互式启动（推荐）
+
+```bash
+python start.py
+```
+
+启动后可用命令：
 ```
 goals           - 查看进化目标状态
 evolve <描述>   - 立即生成新能力
@@ -56,187 +161,148 @@ help            - 查看所有命令
 quit            - 退出程序
 ```
 
-详见 [启动说明文档](docs/启动说明.md)
-
-### 基础API使用（编程方式）
-
-```python
-from prokaryote_agent import init_prokaryote, start_prokaryote, stop_prokaryote, query_prokaryote_state
-
-# 1. 初始化内核
-result = init_prokaryote()
-if result['success']:
-    print("初始化成功")
-    
-# 2. 启动内核
-result = start_prokaryote()
-if result['success']:
-    print(f"内核启动成功，进程ID: {result['pid']}")
-    
-# 3. 查询状态
-state = query_prokaryote_state()
-print(f"当前状态: {state['state']}")
-
-# 4. 停止内核
-stop_prokaryote()
-```
-
-## 项目结构
-
-```
-prokaryote-agent/
-├── prokaryote_agent/        # 核心代码包
-│   ├── config/              # 配置文件目录
-│   │   └── config.json      # 核心配置
-│   ├── backup/              # 备份文件目录
-│   ├── log/                 # 日志文件目录
-│   ├── storage.py           # 存储层（待实现）
-│   ├── init_module.py       # 初始化模块（待实现）
-│   ├── monitor_module.py    # 状态感知模块（待实现）
-│   ├── repair_module.py     # 自我修复模块（待实现）
-│   └── api.py               # 外部接口层（待实现）
-├── docs/                    # 设计文档
-│   ├── PRD.md              # 产品需求文档
-│   └── 概要设计.md          # 技术设计文档
-└── tests/                   # 测试代码（待实现）
-```
-
-## 设计理念
-
-类比原核生物"极简结构、存活优先"的特性：
-- **极简架构**：3层设计（存储→核心模块→接口），无复杂中间件
-- **存活优先**：V0.1聚焦状态监测与异常修复，确保内核稳定运行
-- **轻量可落地**：标准库优先，本地文件存储，目标代码量~500行
-- **渐进进化**：V0.2+将引入变异、筛选、复制等进化能力
-
-## 核心指标（V0.1目标）
-
-- 稳定运行故障率 ≤ 2%
-- 自我修复成功率 ≥ 95%
-- 监测频率：1次/秒
-- 修复响应时间 ≤ 500ms
-
-## 开发进度
-
-**V0.1版本（原始存活版）- ✅ 已完成**
-
-- [x] 项目基础结构搭建
-- [x] 核心存储层实现
-- [x] 初始化模块实现
-- [x] 状态感知模块实现
-- [x] 自我修复模块实现
-- [x] 外部接口层实现
-- [x] 集成测试
-- [x] 文档完善
-- [x] **验收测试通过** ✅
-
-**V0.2版本（AI进化版）- ✅ 核心完成**
-
-- [x] AI适配器（DeepSeek API集成）
-- [x] 能力生成器（代码生成+安全检查）
-- [x] 测试验证（自动生成测试+沙箱执行）
-- [x] 目标驱动进化模式
-- [x] **迭代式进化系统**（多阶段渐进式开发）
-- [x] **混合进化模式**（后台自动 + 人工指引）
-- [x] 能力复用机制
-- [x] 自动优化现有能力
-- [ ] 能力评估与淘汰
-
-查看 [V0.1验收报告](tests/V0.1_ACCEPTANCE_REPORT.md)
-
-## 进化系统
-
-### 统一入口：start.py ⭐ 推荐
-
-原智现在使用统一的 `start.py` 作为主入口，集成了：
-- 后台持续进化线程
-- 交互式命令界面
-- 迭代式多阶段进化
-- 完整日志记录
+### 方式2：自动进化模式
 
 ```bash
-# 启动原智（默认迭代模式）
-python start.py
+# 运行进化循环
+python simple_agent.py
 
-# 查看所有选项
-python start.py --help
+# 或指定间隔
+python goal_evolution.py --interval 30 --mode iterative
 ```
 
-### 进化模式
+### 方式3：编程方式
 
-#### 迭代式进化（Iterative）- 默认推荐
+```python
+from prokaryote_agent import init_prokaryote, start_prokaryote
 
-多阶段渐进式开发，适合复杂功能：
+# 初始化
+result = init_prokaryote()
+print(f"初始化: {result['success']}")
 
-- **简单功能**：1个阶段（直接完成）
-- **中等功能**：3个阶段（基础→核心→扩展）
-- **复杂功能**：4个阶段（基础→核心→扩展→完善）
+# 启动
+result = start_prokaryote()
+print(f"启动: {result['success']}")
+```
 
-**优势**：
-- ✅ 成功率显著提升（复杂功能从0%→67%）
-- ✅ 自动分阶段执行
-- ✅ 每阶段独立验证和反馈
-- ✅ 支持复用已有能力
+## 📝 定义进化目标
 
-#### 简单模式（Simple）
-
-传统一次性生成，适合简单明确的功能。
-
-### 定义目标
-
-编辑项目根目录下的 `evolution_goals.md` 文件：
+编辑 `evolution_goals.md` 文件：
 
 ```markdown
 # 我的能力目标
 
-**状态**: pending  
-**优先级**: high  
-**描述**: 详细描述你想要的能力
+**状态**: pending
+**优先级**: high
+**描述**: 实现一个能够解析 JSON 文件的工具
 
 **验收标准**:
-- [ ] 需求1
-- [ ] 需求2
-- [ ] 需求3
+- [ ] 支持读取本地 JSON 文件
+- [ ] 支持解析嵌套结构
+- [ ] 错误处理完善
 ```
 
-### 运行方式
+## ⚙️ 配置说明
 
-**方式1：混合模式（推荐）**
+### daemon_config.json
 
-```bash
-python start.py
-# 后台自动执行 + 随时手动控制
-prokaryote> goals      # 查看进度
-prokaryote> evolve 实现JSON解析  # 插队任务
-prokaryote> pause      # 暂停后台
+```json
+{
+  "specialization": {
+    "domain": "legal",
+    "domain_name": "法律专家",
+    "skill_tree_path": "./prokaryote_agent/specialization/domains/legal_tree.json",
+    "general_tree_path": "./prokaryote_agent/specialization/domains/general_tree.json",
+    "dual_tree_mode": true
+  },
+  "restart_trigger": {
+    "type": "evolution_count",
+    "threshold": 10
+  }
+}
 ```
 
-**方式2：纯自动模式**
+### secrets.json
 
-```bash
-python goal_evolution.py --mode iterative
-# 按顺序执行所有目标直到完成
+```json
+{
+  "deepseek_api_key": "sk-your-api-key",
+  "deepseek_api_base": "https://api.deepseek.com/v1",
+  "deepseek_model": "deepseek-reasoner"
+}
 ```
 
-## 文档
+## 📊 版本历史
 
-- [启动说明文档](docs/启动说明.md) ⭐ **推荐阅读**
-- [系统合并说明](docs/系统合并说明.md) - 新旧系统对比
-- [迭代式进化设计](docs/迭代式进化设计.md) - 技术架构
-- [产品需求文档 (PRD)](docs/PRD.md)
-- [概要设计文档](docs/概要设计.md)
-- [AI编码规范](.github/copilot-instructions.md)
+### V0.3 - 双树进化版（当前）
 
-## 技术栈
+- ✅ 双树进化系统（通用 + 专业）
+- ✅ AI 驱动的技能树自我增长
+- ✅ 阶段性进化优先级调整
+- ✅ 技能协调器和优化器
+- ✅ 知识固化机制
 
-- Python 3.8+（推荐3.13）
-- 标准库：os, sys, threading, json, logging
-- 可选库：psutil（资源监控），filelock（文件锁）
+### V0.2 - AI进化版
 
-## 许可证
+- ✅ AI 适配器（DeepSeek 集成）
+- ✅ 能力生成器（代码生成 + 安全检查）
+- ✅ 迭代式多阶段进化
+- ✅ 目标驱动进化模式
+- ✅ 技能训练与评估
 
-待定
+### V0.1 - 原始存活版
 
-## 联系方式
+- ✅ 状态感知与监控
+- ✅ 自我修复机制
+- ✅ 本地文件存储
+- ✅ 极简 API 接口
 
-待定
+## 📚 文档索引
+
+| 文档 | 说明 |
+|------|------|
+| [启动说明](docs/启动说明.md) | 快速上手指南 |
+| [通用技能树设计](docs/通用技能树设计.md) | 双树系统详细设计 |
+| [迭代式进化设计](docs/迭代式进化设计.md) | 进化机制说明 |
+| [PRD](docs/PRD.md) | 产品需求文档 |
+| [概要设计](docs/概要设计.md) | 系统架构设计 |
+
+## 🛠️ 开发指南
+
+### 添加新的专业领域
+
+1. 复制 `prokaryote_agent/specialization/domains/legal_tree.json`
+2. 修改技能定义，创建新领域技能树
+3. 更新 `daemon_config.json` 中的 `domain` 和 `skill_tree_path`
+
+### 扩展通用技能
+
+通用技能会通过 AI 自动发现和添加，也可以手动编辑 `general_tree.json`：
+
+```json
+{
+  "skills": {
+    "your_new_skill": {
+      "name": "新技能名称",
+      "category": "knowledge_acquisition",
+      "tier": "basic",
+      "level": 0,
+      "prerequisites": ["existing_skill"],
+      "description": "技能描述"
+    }
+  }
+}
+```
+
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+## 📄 许可证
+
+MIT License
+
+## 🔗 相关链接
+
+- [DeepSeek API 文档](https://platform.deepseek.com/docs)
+- [项目 Issues](https://github.com/mzniu/prokaryote-agent/issues)
