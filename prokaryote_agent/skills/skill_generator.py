@@ -27,6 +27,15 @@ from datetime import datetime
 
 from .skill_base import Skill, SkillMetadata, SkillLibrary
 
+# 尝试导入评估模块
+try:
+    from .evaluation import TrainingEvaluator, EvaluationResult
+    EVALUATION_AVAILABLE = True
+except ImportError:
+    EVALUATION_AVAILABLE = False
+    TrainingEvaluator = None
+    EvaluationResult = None
+
 # 尝试导入核心酶（可选依赖）
 try:
     from prokaryote_agent.core_enzymes import SkillPipeline, get_skill_pipeline
@@ -139,11 +148,17 @@ class SkillGenerator:
         self.logger = logging.getLogger(__name__)
         self.use_core_enzymes = use_core_enzymes and CORE_ENZYMES_AVAILABLE
         self._pipeline = None
+        self._evaluator = None
 
         if self.use_core_enzymes:
             self.logger.info("技能生成器: 使用核心酶模式")
         else:
             self.logger.info("技能生成器: 使用模板模式")
+
+        if EVALUATION_AVAILABLE:
+            self.logger.info("技能生成器: AI评估功能可用")
+        else:
+            self.logger.info("技能生成器: 使用规则评估")
 
     @property
     def pipeline(self) -> Optional['SkillPipeline']:
@@ -151,6 +166,13 @@ class SkillGenerator:
         if self._pipeline is None and self.use_core_enzymes:
             self._pipeline = get_skill_pipeline()
         return self._pipeline
+
+    @property
+    def evaluator(self) -> Optional['TrainingEvaluator']:
+        """获取训练评估器（延迟加载）"""
+        if self._evaluator is None and EVALUATION_AVAILABLE:
+            self._evaluator = TrainingEvaluator()
+        return self._evaluator
 
     def learn_skill(self, skill_definition: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -243,23 +265,25 @@ class SkillGenerator:
                 'error': str(e)
             }
 
-    def upgrade_skill(self, skill_id: str, target_level: int) -> Dict[str, Any]:
+    def upgrade_skill(self, skill_id: str, target_level: int,
+                       skill_definition: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         升级技能 - 通过执行训练任务来提升
 
         升级过程：
         1. 获取当前等级的训练任务（难度递进）
         2. 执行训练任务（实际调用技能）
-        3. 评估训练结果并记录知识固化统计
+        3. 使用AI评估训练结果（多维度评分）
         4. 如果通过，提升等级
         5. 在关键等级点（5/10/15/20）触发代码进化
 
         Args:
             skill_id: 技能ID
             target_level: 目标等级
+            skill_definition: 技能定义（可选，用于AI评估时获取更多上下文）
 
         Returns:
-            升级结果，包含知识统计和能力提升信息
+            升级结果，包含评估详情、知识统计和能力提升信息
         """
         skill = self.library.get_skill(skill_id)
         if not skill:
@@ -283,12 +307,22 @@ class SkillGenerator:
         # 执行训练（调用技能）
         training_result = self._execute_training(skill, training_task)
 
-        if not training_result['passed']:
+        # 使用AI评估或规则评估
+        evaluation_result = self._evaluate_training(
+            skill=skill,
+            task=training_task,
+            execution_result=training_result,
+            skill_definition=skill_definition
+        )
+
+        # 检查评估结果
+        if not evaluation_result['passed']:
             return {
                 'success': False,
                 'skill_id': skill_id,
-                'error': f"训练未通过: {training_result.get('reason', '未知原因')}",
-                'training_task': training_task['name']
+                'error': f"训练未通过: {evaluation_result.get('reason', '未知原因')}",
+                'training_task': training_task['name'],
+                'evaluation': evaluation_result
             }
 
         # 训练通过，获取增强
@@ -335,9 +369,124 @@ class SkillGenerator:
             'enhancements': enhancements,
             'training_task': training_task['name'],
             'training_result': training_result,
+            'evaluation': evaluation_result,
             'knowledge_stored': knowledge_stored,
             'code_evolved': code_evolved,
             'proficiency': skill.metadata.proficiency
+        }
+
+    def _evaluate_training(
+        self,
+        skill: Skill,
+        task: Dict[str, Any],
+        execution_result: Dict[str, Any],
+        skill_definition: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        评估训练结果
+
+        优先使用AI评估，AI不可用时回退到规则评估。
+
+        Args:
+            skill: 技能实例
+            task: 训练任务
+            execution_result: 执行结果
+            skill_definition: 技能定义（用于获取评估配置）
+
+        Returns:
+            评估结果字典
+        """
+        # 构建技能定义（如果没有传入）
+        if skill_definition is None:
+            skill_definition = {
+                'id': skill.metadata.skill_id,
+                'name': skill.metadata.name,
+                'description': skill.metadata.description,
+                'domain': skill.metadata.domain,
+                'tier': skill.metadata.tier,
+                'capabilities': skill.get_capabilities()
+            }
+
+        # 获取产出物列表
+        outputs = execution_result.get('outputs', [])
+
+        # 尝试AI评估
+        if self.evaluator:
+            try:
+                eval_result = self.evaluator.evaluate(
+                    skill_definition=skill_definition,
+                    task=task,
+                    execution_result=execution_result,
+                    current_level=skill.metadata.level,
+                    outputs=outputs
+                )
+
+                # 返回结构化评估结果
+                return {
+                    'passed': eval_result.passed,
+                    'score': eval_result.total_score,
+                    'threshold': eval_result.pass_threshold,
+                    'decision': eval_result.decision.value,
+                    'reason': eval_result.overall_feedback,
+                    'dimension_scores': [d.to_dict() for d in eval_result.dimension_scores],
+                    'improvement_suggestions': eval_result.improvement_suggestions,
+                    'method': eval_result.evaluation_method,
+                    'summary': eval_result.get_summary()
+                }
+
+            except Exception as e:
+                self.logger.warning(f"AI评估失败，使用简单规则: {e}")
+
+        # 回退到简单规则评估（兼容旧逻辑）
+        return self._simple_rule_evaluate(execution_result, task)
+
+    def _simple_rule_evaluate(
+        self,
+        execution_result: Dict[str, Any],
+        task: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        简单规则评估（回退方案）
+
+        保持与原有逻辑兼容
+        """
+        task_type = task.get('type', 'generic')
+        passed = execution_result.get('passed', False)
+        reason = execution_result.get('reason', '')
+
+        # 根据任务类型做基本判断
+        if task_type == 'research':
+            found = execution_result.get('found', 0)
+            expected = task.get('expected_count', 1)
+            passed = found >= expected
+            reason = f"找到{found}条结果" if passed else f"结果不足，期望{expected}条"
+            score = min(10, found / max(expected, 1) * 10)
+
+        elif task_type == 'drafting':
+            content_len = execution_result.get('content_length', 0)
+            passed = content_len > 10
+            reason = '文书生成成功' if passed else '文书内容过短'
+            score = min(10, content_len / 50 * 10) if content_len > 0 else 0
+
+        elif task_type == 'analysis':
+            has_analysis = execution_result.get('has_analysis', False)
+            passed = has_analysis
+            reason = '分析完成' if passed else '分析结果不完整'
+            score = 7.5 if passed else 4.0
+
+        else:
+            # 通用：直接使用执行结果
+            score = 7.0 if passed else 4.0
+
+        return {
+            'passed': passed,
+            'score': score,
+            'threshold': 6.0,
+            'decision': 'upgrade' if passed else 'needs_practice',
+            'reason': reason,
+            'dimension_scores': [],
+            'improvement_suggestions': [],
+            'method': 'simple_rule'
         }
 
     def _evolve_skill_code(self, skill: Skill, new_level: int,
@@ -512,9 +661,9 @@ class SkillGenerator:
         产出物会通过SkillContext自动保存到Knowledge目录
         """
         from .skill_context import SkillContext
-        
+
         task_type = task.get('type', 'generic')
-        
+
         # 创建执行上下文
         context = SkillContext(
             skill_id=skill.metadata.skill_id,
