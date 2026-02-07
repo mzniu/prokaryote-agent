@@ -69,4 +69,10 @@ if __name__ == "__main__":
         port=8000,
         reload=True,
         reload_dirs=[str(PROJECT_ROOT / "web")],
+        reload_excludes=[
+            "prokaryote_agent/skills/library/*",
+            "prokaryote_agent/skills/library/**",
+            "*.log",
+            "*.json",
+        ],
     )

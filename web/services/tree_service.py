@@ -187,3 +187,82 @@ def add_custom_skill(tree_type: str,
         json.dump(tree, f, ensure_ascii=False, indent=2)
 
     return {'success': True, 'skill_id': skill_id}
+
+
+def reload_skill(skill_id: str) -> Dict[str, Any]:
+    """
+    热重载指定技能（不重启服务器）
+
+    Args:
+        skill_id: 技能ID
+
+    Returns:
+        操作结果
+    """
+    from prokaryote_agent.skills.skill_base import SkillLibrary
+    library_path = (
+        PROJECT_ROOT / "prokaryote_agent" / "skills" / "library"
+    )
+
+    # 检查技能文件是否存在
+    skill_file = library_path / f"{skill_id}.py"
+    if not skill_file.exists():
+        return {
+            'success': False,
+            'error': f'技能文件不存在: {skill_id}.py'
+        }
+
+    try:
+        library = SkillLibrary(str(library_path))
+        reloaded = library.reload_skill(skill_id)
+        if reloaded:
+            return {
+                'success': True,
+                'message': f'技能 {skill_id} 已热重载',
+                'skill_name': reloaded.metadata.name if reloaded.metadata else skill_id,
+            }
+        else:
+            return {
+                'success': False,
+                'error': f'重载失败: 技能 {skill_id} 无法加载',
+            }
+    except Exception as e:
+        logger.exception(f"热重载技能失败: {skill_id}")
+        return {
+            'success': False,
+            'error': f'重载异常: {str(e)}',
+        }
+
+
+def reload_all_skills() -> Dict[str, Any]:
+    """
+    热重载所有已注册技能
+
+    Returns:
+        操作结果，包含成功/失败的技能列表
+    """
+    from prokaryote_agent.skills.skill_base import SkillLibrary
+    library_path = (
+        PROJECT_ROOT / "prokaryote_agent" / "skills" / "library"
+    )
+
+    try:
+        library = SkillLibrary(str(library_path))
+        results = {'reloaded': [], 'failed': []}
+
+        for skill_id in list(library.registry.keys()):
+            reloaded = library.reload_skill(skill_id)
+            if reloaded:
+                results['reloaded'].append(skill_id)
+            else:
+                results['failed'].append(skill_id)
+
+        return {
+            'success': True,
+            'message': f'重载完成: {len(results["reloaded"])} 成功, '
+                       f'{len(results["failed"])} 失败',
+            **results,
+        }
+    except Exception as e:
+        logger.exception("批量热重载失败")
+        return {'success': False, 'error': str(e)}

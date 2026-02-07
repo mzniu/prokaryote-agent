@@ -628,15 +628,12 @@ class SkillGenerator:
                     for ch in changes[:5]:
                         self.logger.info(f"   {ch}")
 
-                    # 重新加载技能到库中
+                    # 重新加载技能到库中（热重载，无需重启）
                     if self.library:
-                        # 清除旧缓存
-                        if skill_id in self.library.skills:
-                            del self.library.skills[skill_id]
-                        reloaded = self.library.load_skill(skill_id)
+                        reloaded = self.library.reload_skill(skill_id)
                         if reloaded:
                             self.logger.info(
-                                f"   技能已重新加载"
+                                "   技能已热重载"
                             )
                 else:
                     self.logger.warning(

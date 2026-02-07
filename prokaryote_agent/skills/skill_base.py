@@ -257,7 +257,45 @@ class SkillLibrary:
     def get_skill(self, skill_id: str) -> Optional[Skill]:
         """获取技能（先从缓存，再从文件）"""
         return self.skills.get(skill_id) or self.load_skill(skill_id)
-    
+
+    def reload_skill(self, skill_id: str) -> Optional['Skill']:
+        """
+        热重载技能 - 清除所有缓存后从磁盘重新加载
+
+        用于技能代码被 AI 修复或手动编辑后，在不重启服务器的情况下
+        让新代码立即生效。
+
+        Args:
+            skill_id: 技能ID
+
+        Returns:
+            重新加载的技能实例，失败返回 None
+        """
+        import sys
+        import logging
+        logger = logging.getLogger('prokaryote.skill_library')
+
+        # 1. 清除实例缓存
+        self.skills.pop(skill_id, None)
+
+        # 2. 清除 sys.modules 中的旧模块缓存
+        #    importlib.util 加载时可能用 skill_id 作为模块名
+        modules_to_remove = [
+            key for key in sys.modules
+            if key == skill_id or key.endswith(f'.{skill_id}')
+        ]
+        for mod_key in modules_to_remove:
+            del sys.modules[mod_key]
+
+        # 3. 从磁盘重新加载
+        reloaded = self.load_skill(skill_id)
+        if reloaded:
+            logger.info(f"✅ 技能热重载成功: {skill_id}")
+        else:
+            logger.warning(f"❌ 技能热重载失败: {skill_id}")
+
+        return reloaded
+
     def list_skills(self, domain: str = None, tier: str = None) -> List[SkillMetadata]:
         """
         列出技能

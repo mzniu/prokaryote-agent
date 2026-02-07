@@ -6,7 +6,7 @@ from typing import Optional, List
 from web.services.tree_service import (
     get_general_tree, get_domain_tree, get_tree_stats,
     get_skill_registry, update_skill_priority, unlock_skill,
-    add_custom_skill,
+    add_custom_skill, reload_skill, reload_all_skills,
 )
 
 router = APIRouter()
@@ -72,3 +72,15 @@ async def force_unlock_skill(tree_type: str, skill_id: str):
 async def create_skill(tree_type: str, skill: NewSkill):
     """添加自定义技能"""
     return add_custom_skill(tree_type, skill.model_dump())
+
+
+@router.post("/skills/{skill_id}/reload")
+async def reload_single_skill(skill_id: str):
+    """热重载指定技能（不重启服务器）"""
+    return reload_skill(skill_id)
+
+
+@router.post("/skills/reload-all")
+async def reload_all():
+    """热重载所有已注册技能"""
+    return reload_all_skills()
