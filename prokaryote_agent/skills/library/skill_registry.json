@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-02-07T16:08:41.303247",
+  "updated_at": "2026-02-07T16:14:24.541026",
   "skills": {
     "web_search_basic": {
       "skill_id": "web_search_basic",
@@ -16,6 +16,42 @@
       "successful_executions": 0,
       "created_at": "2026-02-07T16:08:41.303219",
       "updated_at": "2026-02-07T16:08:41.303219",
+      "last_executed_at": "",
+      "prerequisites": [],
+      "dependencies": []
+    },
+    "http_client": {
+      "skill_id": "http_client",
+      "name": "HTTP客户端",
+      "version": "1.0.2",
+      "tier": "basic",
+      "level": 2,
+      "description": "发起HTTP请求，与Web服务交互",
+      "domain": "general",
+      "proficiency": 0.05,
+      "success_rate": 0.0,
+      "total_executions": 1,
+      "successful_executions": 1,
+      "created_at": "2026-02-07T16:13:16.615841",
+      "updated_at": "2026-02-07T16:13:43.099240",
+      "last_executed_at": "",
+      "prerequisites": [],
+      "dependencies": []
+    },
+    "file_operations": {
+      "skill_id": "file_operations",
+      "name": "文件操作",
+      "version": "1.0.2",
+      "tier": "basic",
+      "level": 2,
+      "description": "读写、创建、管理文件和目录",
+      "domain": "general",
+      "proficiency": 0.05,
+      "success_rate": 0.0,
+      "total_executions": 1,
+      "successful_executions": 1,
+      "created_at": "2026-02-07T16:13:16.635490",
+      "updated_at": "2026-02-07T16:14:24.541015",
       "last_executed_at": "",
       "prerequisites": [],
       "dependencies": []

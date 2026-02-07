@@ -651,8 +651,9 @@ class SimpleEvolutionAgent:
                 self.skill_evolution_count += 1
                 self.logger.info(f"✅ {tree_emoji} 技能已解锁: {skill_name} (Lv.1)")
 
-                # 每5次进化尝试优化通用技能树
-                self._try_optimize_general_tree()
+                # 尝试优化通用技能树（只有通用技能才触发优化）
+                if skill_tree == 'general':
+                    self._try_optimize_general_tree(skill_id, 1)
             else:
                 self.logger.warning(f"❌ 解锁失败: {skill_name}")
         else:
@@ -688,8 +689,9 @@ class SimpleEvolutionAgent:
                     f"✅ {tree_emoji} 技能提升: {skill_name} (Lv.{new_level})"
                 )
 
-                # 每5次进化尝试优化通用技能树
-                self._try_optimize_general_tree()
+                # 尝试优化通用技能树（只有通用技能才触发优化）
+                if skill_tree == 'general':
+                    self._try_optimize_general_tree(skill_id, new_level)
             else:
                 self.logger.warning(f"❌ 提升失败: {skill_name}")
 
@@ -705,34 +707,95 @@ class SimpleEvolutionAgent:
             tree_emoji = "📚" if tree_type == 'general' else "🎯"
             self.logger.info(f"   {tree_emoji} 自动解锁: {skill_id}")
 
-    def _try_optimize_general_tree(self):
-        """尝试优化通用技能树（每5次进化触发一次）"""
+    def _try_optimize_general_tree(
+        self,
+        evolved_skill_id: str = None,
+        evolved_skill_level: int = 0
+    ):
+        """
+        尝试优化通用技能树
+
+        触发条件：
+        1. 每5次进化自动触发
+        2. 通用技能达到特定里程碑（5/10/15/20级）
+
+        优化内容：
+        1. AI发现新技能并添加到技能树
+        2. 检测技能协同效应
+        3. 调整技能优先级
+        """
         if not self.general_tree_optimizer:
             return
 
+        # 判断是否应该触发优化
+        should_optimize = False
+        trigger_reason = ""
+
+        # 条件1：每5次进化
         if self.skill_evolution_count > 0 and self.skill_evolution_count % 5 == 0:
-            self.logger.info("🧬 检查通用技能树优化...")
-            try:
-                # 构建优化上下文
-                context = {
-                    'total_level': self.skill_coordinator.get_total_level(),
-                    'general_level': self.skill_coordinator.get_general_level_sum(),
-                    'domain_level': self.skill_coordinator.get_domain_level_sum(),
-                    'stage': self.skill_coordinator.get_current_stage()
-                }
-                result = self.general_tree_optimizer.optimize(
-                    trigger_skill='evolution_milestone',
-                    trigger_level=self.skill_evolution_count,
-                    context=context
-                )
-                if result.get('new_skills'):
-                    new_skills = result.get('new_skills', [])
-                    self.logger.info(f"   💡 发现 {len(new_skills)} 个潜在新技能")
-                if result.get('synergies'):
-                    synergies = result.get('synergies', [])
-                    self.logger.info(f"   🔗 发现 {len(synergies)} 个技能协同")
-            except Exception as e:
-                self.logger.debug(f"优化检查跳过: {e}")
+            should_optimize = True
+            trigger_reason = f"进化里程碑(第{self.skill_evolution_count}次)"
+
+        # 条件2：通用技能达到特定等级
+        if evolved_skill_level in [5, 10, 15, 20]:
+            should_optimize = True
+            trigger_reason = f"技能里程碑({evolved_skill_id} Lv.{evolved_skill_level})"
+
+        if not should_optimize:
+            return
+
+        self.logger.info(f"🧬 触发通用技能树优化: {trigger_reason}")
+
+        try:
+            # 构建完整的优化上下文
+            context = self.skill_coordinator.get_evolution_context()
+
+            # 执行优化
+            result = self.general_tree_optimizer.optimize(
+                trigger_skill=evolved_skill_id or 'evolution_milestone',
+                trigger_level=evolved_skill_level or self.skill_evolution_count,
+                context=context
+            )
+
+            # 处理优化结果
+            changes = result.get('changes', [])
+            new_skills_added = [c for c in changes if c.get('type') == 'add_skill']
+
+            if new_skills_added:
+                self.logger.info(f"   💡 AI发现并添加 {len(new_skills_added)} 个新技能:")
+                for change in new_skills_added:
+                    skill_id = change.get('skill_id', '')
+                    skill = self.skill_coordinator.general_tree.get('skills', {}).get(skill_id, {})  # noqa: E501
+                    self.logger.info(f"      + {skill.get('name', skill_id)}")
+                    self.logger.info(f"        原因: {change.get('reason', '')}")
+
+                # 持久化更新后的技能树
+                self._save_general_tree()
+                self.logger.info("   💾 技能树已更新并保存")
+
+            # 显示协同效应
+            synergies = result.get('synergies', [])
+            if synergies:
+                self.logger.info(f"   🔗 发现 {len(synergies)} 个技能协同效应")
+
+        except Exception as e:
+            self.logger.warning(f"   ⚠️ 优化过程出错: {e}")
+
+    def _save_general_tree(self):
+        """保存更新后的通用技能树"""
+        if not self.skill_coordinator:
+            return
+
+        try:
+            import json
+            tree_path = self.skill_coordinator.general_tree_path
+            tree_data = self.skill_coordinator.general_tree
+
+            with open(tree_path, 'w', encoding='utf-8') as f:
+                json.dump(tree_data, f, ensure_ascii=False, indent=2)
+
+        except Exception as e:
+            self.logger.error(f"保存通用技能树失败: {e}")
 
     def _execute_single_tree_evolution(self):
         """单树模式进化（向后兼容）"""

@@ -54,7 +54,13 @@ class GeneralTreeOptimizer:
         synergies = self._find_synergies(trigger_skill, context)
 
         # 3. 发现潜在新技能（使用AI）
-        if context.get('total_level', 0) >= 50:  # 到一定等级才发现新技能
+        # 条件：总等级>=10 或 触发技能达到5级
+        should_discover = (
+            context.get('total_level', 0) >= 10 or
+            trigger_level >= 5
+        )
+        potential_skills = []
+        if should_discover:
             potential_skills = self._discover_skills(
                 trigger_skill, new_capabilities, context
             )
@@ -186,18 +192,33 @@ class GeneralTreeOptimizer:
             ai = AIAdapter()
             response = ai._call_ai(prompt)
 
+            # _call_ai 返回的是字典 {"success": bool, "content": str}
+            if not response.get('success'):
+                logger.warning("AI调用失败: %s", response.get('error'))
+                return []
+
+            content = response.get('content', '')
+            logger.info("AI响应长度: %d", len(content))
+
             # 解析响应
             import json
             import re
 
             # 提取JSON
-            json_match = re.search(r'\{[\s\S]*\}', response)
+            json_match = re.search(r'\{[\s\S]*\}', content)
             if json_match:
-                result = json.loads(json_match.group())
-                return result.get('suggestions', [])
+                try:
+                    result = json.loads(json_match.group())
+                    suggestions = result.get('suggestions', [])
+                    logger.info("解析到 %d 个技能建议", len(suggestions))
+                    return suggestions
+                except json.JSONDecodeError as je:
+                    logger.warning("JSON解析失败: %s", je)
+            else:
+                logger.warning("未找到JSON格式响应，内容: %s", content[:200])
 
         except Exception as e:
-            logger.debug("AI发现技能失败: %s", e)
+            logger.warning("AI发现技能失败: %s", e)
 
         return []
 
