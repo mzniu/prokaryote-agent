@@ -479,25 +479,67 @@ class SkillGenerator:
         if task_type == 'research':
             found = execution_result.get('found', 0)
             expected = task.get('expected_count', 1)
-            passed = found >= expected
-            reason = f"找到{found}条结果" if passed else f"结果不足，期望{expected}条"
-            score = min(10, found / max(expected, 1) * 10)
+            if found >= expected:
+                score = min(10, 6.0 + (found / max(expected, 1)) * 2)
+                reason = f'找到{found}条结果（期望{expected}条）'
+            elif found > 0:
+                score = 3.0 + (found / max(expected, 1)) * 3
+                reason = f'结果不足，找到{found}条（期望{expected}条）'
+            else:
+                score = 1.0
+                reason = '未找到任何结果'
 
         elif task_type == 'drafting':
             content_len = execution_result.get('content_length', 0)
-            passed = content_len > 10
-            reason = '文书生成成功' if passed else '文书内容过短'
-            score = min(10, content_len / 50 * 10) if content_len > 0 else 0
+            content = execution_result.get('content', '')
+
+            # 检测占位符内容（说明实际内容为空）
+            placeholder_count = content.count('[请填写')
+
+            if content_len >= 800 and placeholder_count == 0:
+                score = 8.5
+                reason = f'文书生成完整（{content_len}字符）'
+            elif content_len >= 500 and placeholder_count <= 1:
+                score = 7.0
+                reason = f'文书基本完成（{content_len}字符）'
+            elif content_len >= 300 and placeholder_count == 0:
+                score = 6.5
+                reason = f'文书内容可用（{content_len}字符）'
+            elif content_len >= 200 and placeholder_count <= 2:
+                score = 5.5
+                reason = f'文书内容尚可（{content_len}字符）'
+            elif content_len >= 50:
+                score = 3.5
+                reason = f'文书内容较短（{content_len}字符）'
+            else:
+                score = 1.0
+                reason = '文书内容严重不足'
+
+            # 占位符惩罚：大量占位符说明没有实质内容
+            if placeholder_count >= 3:
+                penalty = min(4.0, placeholder_count * 1.0)
+                score = max(1.0, score - penalty)
+                reason += f'，{placeholder_count}处占位符未填写'
 
         elif task_type == 'analysis':
             has_analysis = execution_result.get('has_analysis', False)
-            passed = has_analysis
-            reason = '分析完成' if passed else '分析结果不完整'
-            score = 7.5 if passed else 4.0
+            knowledge_stored = execution_result.get('knowledge_stored', 0)
+            if has_analysis and knowledge_stored > 0:
+                score = 7.5
+                reason = f'分析完成，固化{knowledge_stored}条知识'
+            elif has_analysis:
+                score = 6.0
+                reason = '分析完成但未固化知识'
+            else:
+                score = 3.0
+                reason = '分析结果不完整'
 
         else:
             # 通用：直接使用执行结果
-            score = 7.0 if passed else 4.0
+            score = 7.0 if passed else 3.0
+
+        # 统一通过判定：分数 >= 6.0 才算通过
+        passed = score >= 6.0
 
         return {
             'passed': passed,
@@ -832,12 +874,14 @@ class SkillGenerator:
                 )
 
                 if result.get('success'):
-                    content = result.get('result', {}).get('content', '')
-                    passed = len(content) > 10  # 基本检查
+                    res = result.get('result', {})
+                    content = res.get('content', '')
+                    # 不预判 passed，交给评估器决定
                     return {
-                        'passed': passed,
                         'content_length': len(content),
-                        'reason': '文书生成成功' if passed else '文书内容过短',
+                        'content': content[:3000],  # 传递实际内容供评估
+                        'result': res,
+                        'reason': f'文书内容 {len(content)} 字符',
                         'outputs': context.get_outputs()
                     }
                 else:

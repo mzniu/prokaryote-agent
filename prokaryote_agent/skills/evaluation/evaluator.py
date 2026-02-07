@@ -415,22 +415,47 @@ class TrainingEvaluator:
         if not result.get("success", True):
             return 3.0, f"执行失败: {result.get('error', '未知错误')}"
 
+        # 获取实际文档内容（不用 str(result) 作为后备）
         res = result.get("result", result)
-        content = res.get("content", str(res))
-        content_len = len(content)
+        content = res.get("content", "")
+        if not content:
+            content = result.get("content", "")
 
-        if content_len > 500:
-            score = 8.0
-            feedback = f"文档生成完整，内容长度{content_len}字符"
-        elif content_len > 100:
+        content_len = len(content) if content else 0
+        # 如果没有内容文本，退而使用 content_length 字段
+        if content_len == 0:
+            content_len = result.get("content_length",
+                                    res.get("content_length", 0))
+
+        # 检测占位符（[请填写...] 表示模板未填写）
+        placeholder_count = content.count('[请填写') if content else 0
+
+        # 评分：内容量 + 实质性内容
+        if content_len >= 800 and placeholder_count == 0:
+            score = 8.5
+            feedback = f"文档生成完整（{content_len}字符）"
+        elif content_len >= 500 and placeholder_count <= 1:
+            score = 7.0
+            feedback = f"文档基本完成（{content_len}字符）"
+        elif content_len >= 300 and placeholder_count == 0:
             score = 6.5
-            feedback = f"文档生成基本完成，内容{content_len}字符"
-        elif content_len > 10:
-            score = 5.0
-            feedback = f"文档内容较短（{content_len}字符），需要改进"
+            feedback = f"文档内容可用（{content_len}字符）"
+        elif content_len >= 200 and placeholder_count <= 2:
+            score = 5.5
+            feedback = f"文档内容尚可（{content_len}字符）"
+        elif content_len >= 50:
+            score = 4.0
+            feedback = f"文档内容较短（{content_len}字符）"
         else:
-            score = 3.0
-            feedback = "文档内容不足"
+            score = 2.0
+            feedback = "文档内容严重不足"
+
+        # 占位符惩罚
+        if placeholder_count >= 3:
+            penalty = min(4.0, placeholder_count * 1.0)
+            score = max(1.0, score - penalty)
+            feedback += f"（含{placeholder_count}处未填写占位符，" \
+                        f"缺少实质内容）"
 
         return score, feedback
 
