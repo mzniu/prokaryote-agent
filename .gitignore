@@ -53,6 +53,11 @@ prokaryote_agent/secrets.json
 .DS_Store
 Thumbs.db
 
+# Node / Frontend
+node_modules/
+web/frontend/dist/
+web/frontend/.vite/
+
 # Test
 .pytest_cache/
 .coverage
