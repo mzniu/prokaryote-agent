@@ -63,7 +63,7 @@ class LegalResearchBasic(Skill):
         """
         try:
             
-            from prokaryote_agent.skills.web_tools import search_legal_deep, deep_search
+            from prokaryote_agent.skills.web_tools import deep_search_by_categories, deep_search
             from prokaryote_agent.knowledge import store_knowledge, search_knowledge
 
             query = kwargs.get('query', '')
@@ -89,20 +89,30 @@ class LegalResearchBasic(Skill):
                     return {'success': True, 'result': result}
 
             # 2. 本地知识不足，深度联网搜索
-            all_results = []
+            # 法律领域的类别配置（领域特定逻辑在 skill 层）
+            legal_categories = {
+                'laws': '法律法规 法条 条文',
+                'cases': '判例 案例 裁判文书',
+                'interpretations': '司法解释 最高法 最高检'
+            }
 
             # 根据 sources 决定搜索类别
-            category = 'all'
+            category_filter = 'all'
             for src in sources:
                 if '法规' in src or '法律' in src:
-                    category = 'laws'
+                    category_filter = 'laws'
                     break
                 if '判例' in src or '案例' in src:
-                    category = 'cases'
+                    category_filter = 'cases'
                     break
 
-            # 执行深度搜索（会抓取网页内容）
-            all_results = search_legal_deep(query, category=category, max_results=3)
+            # 执行通用的分类深度搜索
+            all_results = deep_search_by_categories(
+                query=query,
+                categories=legal_categories,
+                category_filter=category_filter,
+                max_results=5
+            )
 
             # 3. 存储搜索结果到知识库（有内容的才存）
             stored_count = 0
@@ -157,7 +167,9 @@ class LegalResearchBasic(Skill):
                 content_lines.append(f"- 来源: {r.get('source', '未知')}")
                 if r.get('url'):
                     content_lines.append(f"- URL: {r.get('url')}")
-                content_lines.append(f"\n{r.get('content', '')[:500]}...\n")
+                # 保存完整内容，不截断
+                content = r.get('content', '')
+                content_lines.append(f"\n{content}\n")
             context.save_output(
                 output_type='research',
                 title=f"法律检索_{result.get('query', '未知')[:20]}",

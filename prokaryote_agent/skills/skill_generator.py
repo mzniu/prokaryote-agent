@@ -317,12 +317,21 @@ class SkillGenerator:
 
         # 检查评估结果
         if not evaluation_result['passed']:
+            # 记录失败并分析原因
+            optimization_info = self._record_training_failure(
+                skill_id=skill_id,
+                level=current_level,
+                eval_result=evaluation_result,
+                execution_result=training_result
+            )
+            
             return {
                 'success': False,
                 'skill_id': skill_id,
                 'error': f"训练未通过: {evaluation_result.get('reason', '未知原因')}",
                 'training_task': training_task['name'],
-                'evaluation': evaluation_result
+                'evaluation': evaluation_result,
+                'optimization_info': optimization_info  # 新增：优化建议
             }
 
         # 训练通过，获取增强
@@ -488,6 +497,59 @@ class SkillGenerator:
             'improvement_suggestions': [],
             'method': 'simple_rule'
         }
+
+    def _record_training_failure(
+        self,
+        skill_id: str,
+        level: int,
+        eval_result: Dict[str, Any],
+        execution_result: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        记录训练失败并分析原因
+        
+        当连续失败次数超过阈值时，生成技能优化建议。
+        
+        Args:
+            skill_id: 技能ID
+            level: 当前等级
+            eval_result: 评估结果
+            execution_result: 执行结果
+            
+        Returns:
+            优化信息，包含连续失败次数和优化建议
+        """
+        try:
+            from .evolution.skill_optimizer import record_training_result
+            
+            result = record_training_result(
+                skill_id=skill_id,
+                level=level,
+                success=False,
+                eval_result=eval_result,
+                execution_result=execution_result
+            )
+            
+            if result and result.get('should_optimize'):
+                self.logger.warning(
+                    f"技能 {skill_id} 需要优化，连续失败 {result.get('consecutive_failures', 0)} 次"
+                )
+                
+                # 输出优化建议
+                suggestions = result.get('optimization_suggestions', [])
+                if suggestions:
+                    self.logger.info(f"优化建议:")
+                    for i, s in enumerate(suggestions[:3], 1):
+                        self.logger.info(f"  {i}. [{s.get('strategy')}] {s.get('description')}")
+                        
+            return result or {}
+            
+        except ImportError:
+            self.logger.debug("技能优化模块未加载")
+            return {}
+        except Exception as e:
+            self.logger.warning(f"记录训练失败异常: {e}")
+            return {}
 
     def _evolve_skill_code(self, skill: Skill, new_level: int,
                            enhancements: List[str]) -> bool:
@@ -1082,7 +1144,9 @@ class SkillGenerator:
                 content_lines.append(f"- 来源: {r.get('source', '未知')}")
                 if r.get('url'):
                     content_lines.append(f"- URL: {r.get('url')}")
-                content_lines.append(f"\\n{r.get('content', '')[:500]}...\\n")
+                # 保存完整内容
+                content = r.get('content', '')
+                content_lines.append(f"\\n{content}\\n")
             context.save_output(
                 output_type='research',
                 title=f"法律检索_{result.get('query', '未知')[:20]}",

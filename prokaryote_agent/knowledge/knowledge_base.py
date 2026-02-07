@@ -188,7 +188,11 @@ class MarkdownKnowledge:
             # 跳过索引文件
             if md_file.name.startswith("_"):
                 continue
-            
+
+            # 跳过 research_results 目录（这是技能输出记录，不是知识）
+            if 'research_results' in str(md_file):
+                continue
+
             try:
                 content = md_file.read_text(encoding='utf-8')
                 content_lower = content.lower()
@@ -218,13 +222,21 @@ class MarkdownKnowledge:
                     score += 3
                 
                 if score > 0:
+                    # 提取正文内容（去除 frontmatter）
+                    body_content = content
+                    if content.startswith("---"):
+                        parts = content.split("---", 2)
+                        if len(parts) >= 3:
+                            body_content = parts[2].strip()
+
                     results.append({
                         'path': str(md_file),
                         'title': title,
                         'domain': self._get_domain_from_path(md_file),
                         'category': self._get_category_from_path(md_file),
                         'score': score,
-                        'snippet': self._extract_snippet(content, query)
+                        'snippet': self._extract_snippet(content, query),
+                        'content': body_content  # 返回完整内容
                     })
                     
             except Exception as e:
