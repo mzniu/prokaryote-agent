@@ -6,11 +6,15 @@
 2. 调用其他技能
 3. 保存产出物（自动存入Knowledge）
 4. 记录日志
+5. 调用AI大模型能力（文本生成/分析/推理）
+6. 联网搜索（网页搜索/深度搜索/URL抓取）
+7. 文件读写操作
 
 设计原则：
 - 所有技能共享同一套知识库
 - 技能之间可以互相调用，形成技能链
 - 所有产出物都有迹可循，存储在Knowledge目录
+- 基础能力（AI/联网/文件）统一通过context访问，避免技能代码直接import
 """
 
 import logging
@@ -32,6 +36,9 @@ class SkillContext:
     - 技能互调用
     - 产出物存储
     - 执行日志
+    - AI大模型调用（call_ai）
+    - 联网搜索（web_search / deep_search / fetch_url）
+    - 文件读写（read_file / write_file / list_files）
     """
 
     def __init__(
@@ -65,6 +72,12 @@ class SkillContext:
         # 延迟加载知识库
         self._knowledge_base = None
 
+        # 延迟加载AI适配器
+        self._ai_adapter = None
+
+        # 延迟加载web工具
+        self._web_searcher = None
+
     @property
     def knowledge(self):
         """获取知识库实例（延迟加载）"""
@@ -72,6 +85,14 @@ class SkillContext:
             from prokaryote_agent.knowledge import get_knowledge_base
             self._knowledge_base = get_knowledge_base()
         return self._knowledge_base
+
+    @property
+    def ai(self):
+        """获取AI适配器实例（延迟加载）"""
+        if self._ai_adapter is None:
+            from prokaryote_agent.ai_adapter import AIAdapter
+            self._ai_adapter = AIAdapter()
+        return self._ai_adapter
 
     # ==================== 知识库访问 ====================
 
@@ -195,6 +216,327 @@ class SkillContext:
             self._knowledge_stores += result.get('stored', 0)
 
         return result
+
+    # ==================== AI 大模型能力 ====================
+
+    def call_ai(
+        self,
+        prompt: str,
+        system_prompt: str = None,
+        temperature: float = None,
+        max_tokens: int = None
+    ) -> Dict[str, Any]:
+        """
+        调用AI大模型
+
+        这是技能使用AI能力的统一入口。可用于：
+        - 文本生成、摘要、翻译
+        - 内容分析、推理、判断
+        - 格式转换、结构化提取
+
+        Args:
+            prompt: 用户提示词
+            system_prompt: 系统提示词（可选）
+            temperature: 温度参数（可选，覆盖默认值）
+            max_tokens: 最大Token数（可选，覆盖默认值）
+
+        Returns:
+            {"success": bool, "content": str, "error": str}
+        """
+        self.logger.info(f"调用AI: {prompt[:80]}...")
+
+        try:
+            adapter = self.ai
+
+            # 暂存并覆盖配置(如果有自定义参数)
+            orig_temp = adapter.config.temperature
+            orig_tokens = adapter.config.max_tokens
+            if temperature is not None:
+                adapter.config.temperature = temperature
+            if max_tokens is not None:
+                adapter.config.max_tokens = max_tokens
+
+            try:
+                if system_prompt:
+                    # 拼接system prompt到prompt前面
+                    full_prompt = f"[系统指令] {system_prompt}\n\n{prompt}"
+                    result = adapter._call_ai(full_prompt)
+                else:
+                    result = adapter._call_ai(prompt)
+            finally:
+                # 恢复原始配置
+                adapter.config.temperature = orig_temp
+                adapter.config.max_tokens = orig_tokens
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"AI调用失败: {e}")
+            return {
+                'success': False,
+                'content': '',
+                'error': str(e)
+            }
+
+    # ==================== 联网搜索能力 ====================
+
+    def web_search(
+        self,
+        query: str,
+        max_results: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        网页搜索
+
+        Args:
+            query: 搜索关键词
+            max_results: 最大结果数
+
+        Returns:
+            搜索结果列表 [{"title": str, "url": str, "snippet": str}, ...]
+        """
+        self.logger.info(f"联网搜索: {query}")
+
+        try:
+            from prokaryote_agent.skills.web_tools import web_search
+            return web_search(query, max_results=max_results)
+        except Exception as e:
+            self.logger.error(f"联网搜索失败: {e}")
+            return []
+
+    def deep_search(
+        self,
+        query: str,
+        max_results: int = 5,
+        fetch_content: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        深度搜索 - 搜索并抓取网页内容
+
+        Args:
+            query: 搜索关键词
+            max_results: 最大结果数
+            fetch_content: 是否抓取网页正文内容
+
+        Returns:
+            搜索结果列表（含content字段）
+        """
+        self.logger.info(f"深度搜索: {query}")
+
+        try:
+            from prokaryote_agent.skills.web_tools import deep_search
+            return deep_search(
+                query, max_results=max_results,
+                fetch_content=fetch_content
+            )
+        except Exception as e:
+            self.logger.error(f"深度搜索失败: {e}")
+            return []
+
+    def fetch_url(self, url: str) -> Dict[str, Any]:
+        """
+        抓取指定URL的网页内容
+
+        Args:
+            url: 目标网址
+
+        Returns:
+            {"success": bool, "content": str, "title": str, "error": str}
+        """
+        self.logger.info(f"抓取URL: {url}")
+
+        try:
+            from prokaryote_agent.skills.web_tools import fetch_webpage
+            return fetch_webpage(url)
+        except Exception as e:
+            self.logger.error(f"URL抓取失败: {e}")
+            return {'success': False, 'content': '', 'error': str(e)}
+
+    def deep_search_by_categories(
+        self,
+        query: str,
+        categories: Dict[str, str],
+        category_filter: str = 'all',
+        max_results: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        分类深度搜索
+
+        Args:
+            query: 搜索关键词
+            categories: 类别配置 {类别名: 附加关键词}
+            category_filter: 限定类别，'all' 搜索所有类别
+            max_results: 每个类别的最大结果数
+
+        Returns:
+            搜索结果列表
+        """
+        self.logger.info(f"分类深度搜索: {query} (类别: {list(categories.keys())})")
+
+        try:
+            from prokaryote_agent.skills.web_tools import deep_search_by_categories
+            return deep_search_by_categories(
+                query, categories=categories,
+                category_filter=category_filter,
+                max_results=max_results
+            )
+        except Exception as e:
+            self.logger.error(f"分类深度搜索失败: {e}")
+            return []
+
+    # ==================== 文件读写能力 ====================
+
+    def read_file(
+        self,
+        path: str,
+        encoding: str = 'utf-8'
+    ) -> Dict[str, Any]:
+        """
+        读取文件内容
+
+        安全限制: 只允许读取 prokaryote_agent/ 目录下的文件
+
+        Args:
+            path: 文件路径（相对于项目根目录或绝对路径）
+            encoding: 编码，默认utf-8
+
+        Returns:
+            {"success": bool, "content": str, "path": str, "error": str}
+        """
+        try:
+            file_path = Path(path)
+            if not file_path.is_absolute():
+                file_path = Path.cwd() / file_path
+
+            # 安全检查：只允许在工作目录下读取
+            cwd = Path.cwd()
+            try:
+                file_path.resolve().relative_to(cwd.resolve())
+            except ValueError:
+                return {
+                    'success': False,
+                    'content': '',
+                    'path': str(file_path),
+                    'error': '安全限制：不允许读取工作目录之外的文件'
+                }
+
+            if not file_path.exists():
+                return {
+                    'success': False,
+                    'content': '',
+                    'path': str(file_path),
+                    'error': f'文件不存在: {file_path}'
+                }
+
+            content = file_path.read_text(encoding=encoding)
+            self.logger.debug(f"读取文件: {file_path} ({len(content)} 字符)")
+            return {
+                'success': True,
+                'content': content,
+                'path': str(file_path),
+                'size': len(content)
+            }
+
+        except Exception as e:
+            self.logger.error(f"读取文件失败: {e}")
+            return {
+                'success': False,
+                'content': '',
+                'path': str(path),
+                'error': str(e)
+            }
+
+    def write_file(
+        self,
+        path: str,
+        content: str,
+        encoding: str = 'utf-8',
+        mkdir: bool = True
+    ) -> Dict[str, Any]:
+        """
+        写入文件
+
+        安全限制: 只允许写入 prokaryote_agent/ 目录下的文件
+
+        Args:
+            path: 文件路径（相对于项目根目录或绝对路径）
+            content: 文件内容
+            encoding: 编码
+            mkdir: 是否自动创建父目录
+
+        Returns:
+            {"success": bool, "path": str, "size": int, "error": str}
+        """
+        try:
+            file_path = Path(path)
+            if not file_path.is_absolute():
+                file_path = Path.cwd() / file_path
+
+            # 安全检查
+            cwd = Path.cwd()
+            try:
+                file_path.resolve().relative_to(cwd.resolve())
+            except ValueError:
+                return {
+                    'success': False,
+                    'path': str(file_path),
+                    'error': '安全限制：不允许写入工作目录之外的文件'
+                }
+
+            if mkdir:
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            file_path.write_text(content, encoding=encoding)
+            self.logger.info(f"写入文件: {file_path} ({len(content)} 字符)")
+            return {
+                'success': True,
+                'path': str(file_path),
+                'size': len(content)
+            }
+
+        except Exception as e:
+            self.logger.error(f"写入文件失败: {e}")
+            return {
+                'success': False,
+                'path': str(path),
+                'error': str(e)
+            }
+
+    def list_files(
+        self,
+        directory: str = '.',
+        pattern: str = '*',
+        recursive: bool = False
+    ) -> List[str]:
+        """
+        列出目录下的文件
+
+        Args:
+            directory: 目录路径
+            pattern: 文件匹配模式（如 '*.json', '*.md'）
+            recursive: 是否递归子目录
+
+        Returns:
+            文件路径列表
+        """
+        try:
+            dir_path = Path(directory)
+            if not dir_path.is_absolute():
+                dir_path = Path.cwd() / dir_path
+
+            if not dir_path.exists():
+                return []
+
+            if recursive:
+                files = list(dir_path.rglob(pattern))
+            else:
+                files = list(dir_path.glob(pattern))
+
+            return [str(f) for f in files if f.is_file()]
+
+        except Exception as e:
+            self.logger.error(f"列出文件失败: {e}")
+            return []
 
     # ==================== 技能互调用 ====================
 

@@ -1333,10 +1333,21 @@ class SkillGenerator:
 
 1. **execute_code**: execute方法的实现体（缩进8格）
    - 可以使用 `kwargs` 获取输入参数
-   - 可以使用 `context` (SkillContext) 访问知识库和保存产出物
-   - 可以导入这些工具模块:
-     - `from prokaryote_agent.skills.web_tools import web_search, deep_search, fetch_webpage, search_wikipedia`
-     - `from prokaryote_agent.knowledge import store_knowledge, search_knowledge, smart_search`
+   - 可以使用 `context` (SkillContext) 统一访问所有基础能力：
+     ▸ AI大模型: `context.call_ai(prompt, system_prompt=None, temperature=None)` → {{"success": bool, "content": str}}
+     ▸ 联网搜索: `context.web_search(query, max_results=5)` → [list of results]
+     ▸ 深度搜索: `context.deep_search(query, max_results=5, fetch_content=True)` → [results with content]
+     ▸ URL抓取: `context.fetch_url(url)` → {{"success": bool, "content": str}}
+     ▸ 知识库搜索: `context.search_knowledge(query, category=None, limit=5)` → [results]
+     ▸ 知识库存储: `context.store_knowledge(title, content, category, source, tags)` → bool
+     ▸ 智能搜索(本地+网络): `context.smart_search(query, category=None, use_web=True)` → dict
+     ▸ 调用其他技能: `context.call_skill(skill_id, **kwargs)` → dict
+     ▸ 文件读取: `context.read_file(path)` → {{"success": bool, "content": str}}
+     ▸ 文件写入: `context.write_file(path, content)` → {{"success": bool, "path": str}}
+     ▸ 列出文件: `context.list_files(directory, pattern, recursive)` → [paths]
+     ▸ 保存产出物: `context.save_output(output_type, title, content, format, category)` → path
+     ▸ 日志: `context.log(message, level='info')`
+   - **禁止直接import web_tools或ai_adapter，所有能力通过context调用**
    - 最终结果存储在 `result` 变量中（dict类型）
 
 2. **validate_code**: validate_input方法的实现体（缩进8格）
@@ -1351,8 +1362,7 @@ class SkillGenerator:
 
 重要要求:
 - 代码必须是真正可执行的Python代码
-- 使用web_search/deep_search进行联网搜索获取信息
-- 使用store_knowledge/search_knowledge进行知识库操作
+- 所有基础能力(AI/联网/文件)统一通过context对象调用，不要直接import
 - 不要使用占位符或TODO注释
 - 代码应专注于"{skill_name}"的实际功能实现
 
@@ -1430,16 +1440,13 @@ class SkillGenerator:
 
         if 'research' in skill_id or '检索' in skill_name:
             execute_code = '''
-            from prokaryote_agent.skills.web_tools import search_legal_deep, deep_search
-            from prokaryote_agent.knowledge import store_knowledge, search_knowledge
-
             query = kwargs.get('query', '')
             sources = kwargs.get('sources', ['法律法规', '司法解释', '判例'])
             use_cache = kwargs.get('use_cache', True)
 
             # 1. 先查本地知识库
             if use_cache:
-                local_results = search_knowledge(query, domain="legal", limit=5)
+                local_results = context.search_knowledge(query, limit=5)
                 if len(local_results) >= 3:
                     result = {
                         'query': query,
@@ -1450,40 +1457,26 @@ class SkillGenerator:
                         'from_cache': True,
                         'stored_to_kb': 0
                     }
-                    # 缓存路径也保存产出物
                     if context and result:
                         self._save_output(context, result)
                     return {'success': True, 'result': result}
 
             # 2. 本地知识不足，深度联网搜索
-            all_results = []
-
-            # 根据 sources 决定搜索类别
-            category = 'all'
-            for src in sources:
-                if '法规' in src or '法律' in src:
-                    category = 'laws'
-                    break
-                if '判例' in src or '案例' in src:
-                    category = 'cases'
-                    break
-
-            # 执行深度搜索（会抓取网页内容）
-            all_results = search_legal_deep(query, category=category, max_results=3)
+            legal_query = f"{query} 法律法规 法条"
+            all_results = context.deep_search(legal_query, max_results=3)
 
             # 3. 存储搜索结果到知识库（有内容的才存）
             stored_count = 0
             for r in all_results[:5]:
                 content = r.get('content', '')
-                if content and len(content) > 100:  # 只存有内容的
+                if content and len(content) > 100:
                     try:
-                        store_knowledge(
+                        context.store_knowledge(
                             title=r.get('title', query),
                             content=content,
-                            domain="legal",
                             category=r.get('category', 'general'),
-                            source_url=r.get('url', ''),
-                            acquired_by=self.metadata.skill_id
+                            source=r.get('url', ''),
+                            tags=['法律', '检索']
                         )
                         stored_count += 1
                     except Exception:
@@ -1513,8 +1506,6 @@ class SkillGenerator:
 
         elif 'drafting' in skill_id or '文书' in skill_name or '起草' in skill_name:
             execute_code = '''
-            from prokaryote_agent.skills.web_tools import web_search, fetch_webpage
-
             doc_type = kwargs.get('doc_type', '合同')
             template = kwargs.get('template', None)
             data = kwargs.get('data', {})
@@ -1534,7 +1525,7 @@ class SkillGenerator:
 
             # 搜索相关模板和范例
             try:
-                search_results = web_search(f"{doc_type} 模板 范本", max_results=3)
+                search_results = context.web_search(f"{doc_type} 模板 范本", max_results=3)
                 references = [{'title': r.get('title', ''), 'url': r.get('url', '')} for r in search_results[:2]]
             except Exception:
                 references = []
@@ -1567,8 +1558,6 @@ class SkillGenerator:
 
         elif 'analysis' in skill_id or '分析' in skill_name:
             execute_code = '''
-            from prokaryote_agent.skills.web_tools import deep_search
-            from prokaryote_agent.knowledge import smart_search, store_knowledge
             import re
 
             case_text = kwargs.get('case_text', '')
@@ -1585,17 +1574,15 @@ class SkillGenerator:
             knowledge_stored = 0
             legal_context = []
 
-            for kw in keywords[:2]:  # 减少关键词数量，增加每个的深度
+            for kw in keywords[:2]:
                 try:
-                    search_result = smart_search(
+                    search_result = context.smart_search(
                         query=f"{kw} 法律 规定",
-                        domain="legal",
-                        min_local=2,
-                        web_search_func=lambda q, max_results: deep_search(q, max_results=max_results, fetch_content=True),
-                        acquired_by=self.metadata.skill_id
+                        use_web=True,
+                        auto_store=True
                     )
                     legal_context.extend(search_result.get('all_results', []))
-                    knowledge_stored += search_result.get('knowledge_stored', 0)
+                    knowledge_stored += search_result.get('stored', 0)
                 except Exception:
                     pass
 
@@ -1627,13 +1614,11 @@ class SkillGenerator:
 
         elif 'contract' in skill_id or '合同' in skill_name:
             execute_code = '''
-            from prokaryote_agent.skills.web_tools import web_search
-
             contract_text = kwargs.get('contract_text', '')
             check_items = kwargs.get('check_items', ['条款完整性', '风险点', '合规性'])
 
             # 搜索合同审查要点
-            review_points = web_search("合同审查要点 风险点", max_results=3)
+            review_points = context.web_search("合同审查要点 风险点", max_results=3)
 
             # 分析合同（简化版本）
             issues = []
@@ -1649,7 +1634,7 @@ class SkillGenerator:
                 suggestions.append('建议增加争议解决方式条款')
 
             # 搜索相关法规参考
-            legal_refs = web_search("合同法 必备条款", max_results=2)
+            legal_refs = context.web_search("合同法 必备条款", max_results=2)
 
             result = {
                 'overall_rating': 'B' if len(issues) <= 2 else 'C',
@@ -1760,13 +1745,11 @@ class SkillGenerator:
 
         if 'code_review' in skill_id or '代码审查' in skill_name:
             execute_code = '''
-            from prokaryote_agent.skills.web_tools import web_search
-
             code = kwargs.get('code', '')
             language = kwargs.get('language', 'python')
 
             # 搜索代码审查最佳实践
-            best_practices = web_search(f"{language} code review best practices", max_results=3)
+            best_practices = context.web_search(f"{language} code review best practices", max_results=3)
 
             # 基本代码检查
             issues = []
@@ -1805,9 +1788,6 @@ class SkillGenerator:
 
         elif 'debug' in skill_id or '调试' in skill_name:
             execute_code = '''
-            from prokaryote_agent.skills.web_tools import web_search
-            from prokaryote_agent.knowledge import store_knowledge, search_knowledge
-
             error_message = kwargs.get('error', '')
             code_context = kwargs.get('code', '')
             language = kwargs.get('language', 'python')
@@ -1815,9 +1795,8 @@ class SkillGenerator:
 
             # 1. 先查本地知识库
             if use_cache and error_message:
-                # 提取错误类型作为搜索词
                 error_type = error_message.split(':')[0] if ':' in error_message else error_message[:30]
-                local_results = search_knowledge(error_type, domain="software_dev", limit=3)
+                local_results = context.search_knowledge(error_type, limit=3)
                 if local_results:
                     result = {
                         'error': error_message,
@@ -1832,21 +1811,20 @@ class SkillGenerator:
 
             # 2. 联网搜索
             search_query = f"{language} {error_message[:100]}"
-            solutions = web_search(search_query, max_results=5)
+            solutions = context.web_search(search_query, max_results=5)
 
             # 也搜索 Stack Overflow
-            so_results = web_search(f"site:stackoverflow.com {error_message[:80]}", max_results=3)
+            so_results = context.web_search(f"site:stackoverflow.com {error_message[:80]}", max_results=3)
 
             # 3. 存储有用的解决方案到知识库
             all_solutions = solutions + so_results
             for s in all_solutions[:3]:
-                store_knowledge(
+                context.store_knowledge(
                     title=s.get('title', error_message[:50]),
                     content=s.get('snippet', '') or f"错误: {error_message}\\n解决方案链接: {s.get('url', '')}",
-                    domain="software_dev",
                     category="errors",
-                    source_url=s.get('url', ''),
-                    acquired_by=self.metadata.skill_id
+                    source=s.get('url', ''),
+                    tags=['调试', language]
                 )
 
             result = {
@@ -1873,14 +1851,12 @@ class SkillGenerator:
 
         elif 'api' in skill_id or 'API' in skill_name:
             execute_code = '''
-            from prokaryote_agent.skills.web_tools import web_search, fetch_webpage
-
             api_name = kwargs.get('api_name', '')
             operation = kwargs.get('operation', 'usage')  # usage, example, docs
 
             # 搜索 API 文档和示例
-            doc_results = web_search(f"{api_name} API documentation", max_results=3)
-            example_results = web_search(f"{api_name} API example code", max_results=3)
+            doc_results = context.web_search(f"{api_name} API documentation", max_results=3)
+            example_results = context.web_search(f"{api_name} API example code", max_results=3)
 
             result = {
                 'api_name': api_name,
@@ -1908,15 +1884,13 @@ class SkillGenerator:
             level = kwargs.get('level', 'beginner')  # beginner, intermediate, advanced
 
             # 搜索教程和学习资源
-            tutorial_results = web_search(f"{topic} tutorial {level}", max_results=5)
+            tutorial_results = context.web_search(f"{topic} tutorial {level}", max_results=5)
 
-            # 搜索概念解释
-            wiki_results = search_wikipedia(topic)
+            # 搜索概念解释（通过web搜索）
+            wiki_results = context.web_search(f"{topic} wikipedia 概念", max_results=3)
 
             # 搜索官方文档
-            doc_results = web_search(f"{topic} official documentation", max_results=2)
-
-            result = {
+            doc_results = context.
                 'topic': topic,
                 'level': level,
                 'tutorials': tutorial_results,
@@ -1989,11 +1963,9 @@ class SkillGenerator:
 
     def _generate_generic_skill_code(self, skill_id: str, skill_name: str,
                                       capabilities: List[str]) -> tuple:
-        """生成通用技能代码 - 使用网络搜索作为基础能力"""
+        """生成通用技能代码 - 使用context提供的基础能力"""
 
         execute_code = '''
-            from prokaryote_agent.skills.web_tools import web_search, search_wikipedia
-
             # 获取输入
             input_data = kwargs.get('input', {})
             query = kwargs.get('query', '')
@@ -2003,8 +1975,8 @@ class SkillGenerator:
             wiki_results = []
 
             if query:
-                search_results = web_search(query, max_results=5)
-                wiki_results = search_wikipedia(query)
+                search_results = context.web_search(query, max_results=5)
+                wiki_results = context.web_search(f"{query} wikipedia 概念", max_results=3)
 
             result = {
                 'skill': "''' + skill_name + '''",
