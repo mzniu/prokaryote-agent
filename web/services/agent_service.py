@@ -348,10 +348,13 @@ def _execute_one_skill(
             except Exception as e:
                 logger.warning("知识库搜索失败: %s", e)
 
-    # 执行
+    # 执行 – 移除与 execute() 签名冲突的保留字段
+    reserved_keys = ('context', 'self')
+    exec_params = {k: v for k, v in params.items() if k not in reserved_keys}
+
     t0 = time.time()
     try:
-        result = skill.execute(context=ctx, **params)
+        result = skill.execute(context=ctx, **exec_params)
         duration_ms = int((time.time() - t0) * 1000)
         success = result.get("success", False)
         skill_result = result.get("result", {})

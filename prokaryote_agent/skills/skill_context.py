@@ -97,12 +97,16 @@ class SkillContext:
         self._knowledge_queries += 1
         self.logger.debug(f"搜索知识库: {query}")
 
-        results = search_knowledge(
-            query=query,
-            domain=self.domain,
-            category=category,
-            limit=limit
-        )
+        kwargs = dict(query=query, domain=self.domain, limit=limit)
+        # category is accepted by SkillContext API but the underlying
+        # search_knowledge() doesn't support it yet – pass only when
+        # the function signature allows it.
+        import inspect
+        sig = inspect.signature(search_knowledge)
+        if 'category' in sig.parameters and category:
+            kwargs['category'] = category
+
+        results = search_knowledge(**kwargs)
 
         return results
 
