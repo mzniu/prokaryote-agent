@@ -910,13 +910,15 @@ class SkillGenerator:
         return None
 
     def _get_past_feedback(self, skill_id: str) -> List[str]:
-        """获取技能的历史评估反馈，用于指导后续训练"""
+        """获取技能的历史评估反馈 + 用户测试反馈，用于指导后续训练"""
+        feedback = []
+
+        # 1. 从 optimizer 获取评估系统反馈
         try:
             from .evolution.skill_optimizer import get_skill_optimizer
             optimizer = get_skill_optimizer()
             failures = optimizer.failure_history.get(skill_id, [])
             if failures:
-                feedback = []
                 for entry in failures[-3:]:
                     suggestions = entry.get(
                         'improvement_suggestions', []
@@ -925,10 +927,22 @@ class SkillGenerator:
                     reason = entry.get('reason', '')
                     if reason:
                         feedback.append(reason)
-                return feedback[:8]
         except (ImportError, Exception):
             pass
-        return []
+
+        # 2. 从用户测试反馈中获取改进建议
+        try:
+            from web.services.feedback_service import (
+                get_user_feedback_for_training,
+            )
+            user_feedback = get_user_feedback_for_training(
+                skill_id=skill_id, limit=5,
+            )
+            feedback.extend(user_feedback)
+        except (ImportError, Exception):
+            pass
+
+        return feedback[:10]
 
     def _get_legal_training_task(self, skill_id: str, level: int) -> Dict[str, Any]:
         """获取法律领域训练任务"""

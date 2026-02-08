@@ -10,6 +10,7 @@ const menuItems = [
   { path: '/evolution-log', title: '进化日志', icon: 'Document' },
   { path: '/evolution-config', title: '进化配置', icon: 'Setting' },
   { path: '/knowledge', title: '知识库', icon: 'Reading' },
+  { path: '/agent-test', title: 'Agent测试', icon: 'ChatDotRound' },
 ]
 
 const handleSelect = (path) => {

@@ -19,7 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from web.routers import status, trees, goals, config, evolve, knowledge, logs  # noqa: E402
+from web.routers import status, trees, goals, config, evolve, knowledge, logs, agent  # noqa: E402
 
 
 @asynccontextmanager
@@ -54,6 +54,7 @@ app.include_router(config.router, prefix="/api/config", tags=["配置管理"])
 app.include_router(evolve.router, prefix="/api/evolve", tags=["进化控制"])
 app.include_router(knowledge.router, prefix="/api/knowledge", tags=["知识库"])
 app.include_router(logs.router, prefix="/api/logs", tags=["日志"])
+app.include_router(agent.router, prefix="/api/agent", tags=["Agent测试"])
 
 # 生产模式：托管前端静态文件
 DIST_DIR = Path(__file__).parent / "frontend" / "dist"

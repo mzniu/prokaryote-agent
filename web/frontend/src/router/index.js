@@ -35,6 +35,12 @@ const routes = [
     component: () => import('../views/KnowledgeBase.vue'),
     meta: { title: '知识库', icon: 'Reading' },
   },
+  {
+    path: '/agent-test',
+    name: 'AgentTest',
+    component: () => import('../views/AgentTest.vue'),
+    meta: { title: 'Agent测试', icon: 'ChatDotRound' },
+  },
 ]
 
 const router = createRouter({
