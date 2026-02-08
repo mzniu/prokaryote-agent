@@ -788,6 +788,13 @@ class SkillGenerator:
         """
         # 尝试获取历史评估反馈
         past_feedback = self._get_past_feedback(skill_id)
+        if past_feedback:
+            self.logger.info(
+                "📋 训练参考用户反馈 %d 条: %s",
+                len(past_feedback), skill_id
+            )
+            for fb in past_feedback:
+                self.logger.info("   ↳ %s", fb[:120])
 
         # 优先使用AI生成训练任务
         ai_task = self._generate_ai_training_task(
