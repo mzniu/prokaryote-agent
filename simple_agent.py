@@ -565,8 +565,13 @@ class SimpleEvolutionAgent:
 
     def _execute_skill_evolution(self):
         """根据技能树执行技能进化"""
-        # 优先使用协调器（双树模式）
+        # 优先使用 AI 训练规划器
         if self.skill_coordinator:
+            plan = self._get_ai_training_plan()
+            if plan and plan.get("plan"):
+                self._execute_planned_evolution(plan)
+                return
+            # AI 规划不可用，回退到协调器
             self._execute_coordinated_evolution()
             return
 
@@ -576,6 +581,215 @@ class SimpleEvolutionAgent:
             return
 
         self.logger.info("📋 没有待执行的目标，也没有技能树配置")
+
+    def _get_ai_training_plan(self):
+        """获取 AI 训练计划"""
+        try:
+            from prokaryote_agent.skills.evolution.training_archive import (
+                analyze_global, analyze_skill,
+            )
+            from prokaryote_agent.skills.evolution.training_planner import (
+                create_training_plan,
+            )
+            from prokaryote_agent.ai_adapter import AIAdapter
+
+            # 收集已学技能状态
+            skill_stats = []
+            all_skills = {}
+            if self.skill_coordinator:
+                for tree_dict in [
+                    self.skill_coordinator.general_tree,
+                    self.skill_coordinator.domain_tree,
+                ]:
+                    for sid, info in tree_dict.get(
+                        "skills", {}
+                    ).items():
+                        if info.get("unlocked"):
+                            all_skills[sid] = info
+
+            for sid, info in all_skills.items():
+                # 从训练档案拿分析数据
+                analysis = analyze_skill(sid, days=14)
+                skill_stats.append({
+                    "skill_id": sid,
+                    "name": info.get("name", sid),
+                    "level": info.get("level", 0),
+                    "domain": info.get("domain", "unknown"),
+                    "tier": info.get("tier", "basic"),
+                    "success_rate": analysis.get(
+                        "success_rate", 1.0
+                    ),
+                    "avg_score": analysis.get("avg_score", 0),
+                    "total_trainings": analysis.get(
+                        "total_trainings", 0
+                    ),
+                    "weak_dims": analysis.get(
+                        "weak_dimensions", {}
+                    ),
+                })
+
+            # 收集未学习技能
+            available = []
+            if self.skill_coordinator:
+                for tree_dict in [
+                    self.skill_coordinator.general_tree,
+                    self.skill_coordinator.domain_tree,
+                ]:
+                    for sid, info in tree_dict.get(
+                        "skills", {}
+                    ).items():
+                        if not info.get("unlocked"):
+                            available.append({
+                                "skill_id": sid,
+                                "name": info.get("name", sid),
+                                "domain": info.get(
+                                    "domain", "unknown"
+                                ),
+                            })
+
+            # 全局档案分析
+            global_analysis = analyze_global(days=14)
+
+            # 生成计划
+            adapter = AIAdapter()
+            plan = create_training_plan(
+                skill_stats=skill_stats,
+                archive_analysis=global_analysis,
+                available_skills=available,
+                max_picks=1,  # 每轮进化处理1个
+                ai_adapter=adapter,
+            )
+            return plan
+
+        except Exception as e:
+            self.logger.debug("AI训练规划跳过: %s", e)
+            return None
+
+    def _execute_planned_evolution(self, plan):
+        """执行 AI 规划的训练计划"""
+        summary = plan.get("analysis_summary", "")
+        method = plan.get("method", "unknown")
+        self.logger.info(
+            "🧠 训练规划 (%s): %s", method, summary[:120],
+        )
+
+        for item in plan["plan"]:
+            action = item.get("action", "train")
+            skill_id = item.get("skill_id", "")
+            reason = item.get("reason", "")
+            focus = item.get("focus_dimensions", [])
+            hint = item.get("task_hint", "")
+
+            self.logger.info(
+                "📋 计划: %s %s — %s",
+                action, skill_id, reason[:80],
+            )
+            if focus:
+                self.logger.info(
+                    "   侧重维度: %s", ", ".join(focus),
+                )
+            if hint:
+                self.logger.info(
+                    "   训练提示: %s", hint[:100],
+                )
+
+            # 查找技能在哪个树里
+            skill_info = None
+            skill_tree = None
+            if self.skill_coordinator:
+                for tree_name, tree_dict in [
+                    ("general",
+                     self.skill_coordinator.general_tree),
+                    ("domain",
+                     self.skill_coordinator.domain_tree),
+                ]:
+                    if skill_id in tree_dict.get("skills", {}):
+                        skill_info = tree_dict["skills"][skill_id]
+                        skill_info["id"] = skill_id
+                        skill_tree = tree_name
+                        break
+
+            if not skill_info:
+                self.logger.warning(
+                    "⚠️ 规划的技能 %s 不在技能树中，跳过",
+                    skill_id,
+                )
+                continue
+
+            # 将规划器提示注入 skill_generator
+            if self.skill_generator and (focus or hint):
+                self.skill_generator.training_hints[skill_id] = {
+                    "focus_dimensions": focus,
+                    "task_hint": hint,
+                }
+
+            current_level = skill_info.get("level", 0)
+
+            if action == "unlock" or current_level == 0:
+                self.logger.info(
+                    "🔓 解锁新技能: %s", skill_id,
+                )
+                success = self._train_skill_unlock(skill_info)
+                if success:
+                    tree_dict = (
+                        self.skill_coordinator.general_tree
+                        if skill_tree == "general"
+                        else self.skill_coordinator.domain_tree
+                    )
+                    if skill_id in tree_dict.get("skills", {}):
+                        tree_dict["skills"][skill_id][
+                            "unlocked"
+                        ] = True
+                        tree_dict["skills"][skill_id][
+                            "level"
+                        ] = 1
+                    self.skill_coordinator.record_evolution_success(
+                        skill_tree, skill_id, 1,
+                    )
+                    self._check_and_unlock_new_skills()
+                    self.skill_evolution_count += 1
+                    self.logger.info(
+                        "✅ 技能已解锁: %s (Lv.1)", skill_id,
+                    )
+                else:
+                    self.logger.warning(
+                        "❌ 解锁失败: %s", skill_id,
+                    )
+
+            else:  # train / repair
+                self.logger.info(
+                    "📈 提升技能: %s Lv.%d → Lv.%d",
+                    skill_id, current_level, current_level + 1,
+                )
+                success = self._train_skill_level_up(skill_info)
+                if success:
+                    new_level = current_level + 1
+                    tree_dict = (
+                        self.skill_coordinator.general_tree
+                        if skill_tree == "general"
+                        else self.skill_coordinator.domain_tree
+                    )
+                    if skill_id in tree_dict.get("skills", {}):
+                        tree_dict["skills"][skill_id][
+                            "level"
+                        ] = new_level
+                    self.skill_coordinator.record_evolution_success(
+                        skill_tree, skill_id, new_level,
+                    )
+                    self._check_and_unlock_new_skills()
+                    self.skill_evolution_count += 1
+                    self.logger.info(
+                        "✅ 技能提升: %s (Lv.%d)",
+                        skill_id, new_level,
+                    )
+                    if skill_tree == "general":
+                        self._try_optimize_general_tree(
+                            skill_id, new_level,
+                        )
+                else:
+                    self.logger.warning(
+                        "❌ 提升失败: %s", skill_id,
+                    )
 
     def _execute_coordinated_evolution(self):
         """使用协调器执行双树进化"""

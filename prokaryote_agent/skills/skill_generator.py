@@ -151,6 +151,9 @@ class SkillGenerator:
         self._evaluator = None
         self._ai_adapter = None
 
+        # AI 训练规划器的提示（由外部设置）
+        self.training_hints: Dict[str, Any] = {}
+
         if self.use_core_enzymes:
             self.logger.info("技能生成器: 使用核心酶模式")
         else:
@@ -356,7 +359,22 @@ class SkillGenerator:
                 eval_result=evaluation_result,
                 execution_result=training_result
             )
-            
+
+            # 持久化训练档案
+            try:
+                from .evolution.training_archive import record_training
+                record_training(
+                    skill_id=skill_id,
+                    level=current_level,
+                    target_level=target_level,
+                    task=training_task,
+                    execution_result=training_result,
+                    evaluation=evaluation_result,
+                    success=False,
+                )
+            except Exception:
+                pass
+
             return {
                 'success': False,
                 'skill_id': skill_id,
@@ -414,6 +432,23 @@ class SkillGenerator:
             self.logger.info(f"  知识固化: {knowledge_stored} 条新知识")
         if code_evolved:
             self.logger.info(f"  代码进化: 技能能力已增强")
+
+        # 持久化训练档案
+        try:
+            from .evolution.training_archive import record_training
+            record_training(
+                skill_id=skill_id,
+                level=current_level,
+                target_level=target_level,
+                task=training_task,
+                execution_result=training_result,
+                evaluation=evaluation_result,
+                success=True,
+                knowledge_stored=knowledge_stored,
+                code_evolved=code_evolved,
+            )
+        except Exception:
+            pass
 
         return {
             'success': True,
@@ -851,6 +886,22 @@ class SkillGenerator:
                 + "\n".join(f"- {fb}" for fb in past_feedback[:5])
             )
 
+        # AI 规划器提示
+        plan_section = ""
+        hints = self.training_hints.get(skill_id, {})
+        if hints:
+            focus = hints.get("focus_dimensions", [])
+            task_hint = hints.get("task_hint", "")
+            if focus:
+                plan_section += (
+                    f"\n训练规划器要求侧重维度: "
+                    f"{', '.join(focus)}\n"
+                )
+            if task_hint:
+                plan_section += (
+                    f"训练规划器任务建议: {task_hint}\n"
+                )
+
         difficulty = min(level // 5 + 1, 5)
         prompt = f"""你是一个AI技能训练任务生成器。请根据以下信息生成一个恰当的训练任务。
 
@@ -859,7 +910,7 @@ class SkillGenerator:
 - 当前等级: {level}（目标提升到 {level + 1}）
 - 目标难度: {difficulty}/5
 {feedback_section}
-
+{plan_section}
 任务设计要求:
 1. 难度与等级匹配：等级0-4为基础，5-9为进阶，10-14为高级，15+为专家
 2. 任务应测试该技能的核心能力
@@ -920,24 +971,58 @@ class SkillGenerator:
         """获取技能的历史评估反馈 + 用户测试反馈，用于指导后续训练"""
         feedback = []
 
-        # 1. 从 optimizer 获取评估系统反馈
+        # 1. 从持久化训练档案获取历史反馈（优先，重启不丢失）
         try:
-            from .evolution.skill_optimizer import get_skill_optimizer
-            optimizer = get_skill_optimizer()
-            failures = optimizer.failure_history.get(skill_id, [])
-            if failures:
-                for entry in failures[-3:]:
-                    suggestions = entry.get(
-                        'improvement_suggestions', []
+            from .evolution.training_archive import analyze_skill
+            analysis = analyze_skill(skill_id, days=14)
+            if analysis.get("data_available"):
+                # 弱项维度
+                weak = analysis.get("weak_dimensions", {})
+                if weak:
+                    dims = ", ".join(
+                        f"{k}({v}次)" for k, v in weak.items()
                     )
-                    feedback.extend(suggestions[:2])
-                    reason = entry.get('reason', '')
-                    if reason:
-                        feedback.append(reason)
+                    feedback.append(
+                        f"历史弱项维度: {dims}"
+                    )
+                # 改进建议
+                for s in analysis.get(
+                    "recent_suggestions", []
+                )[:3]:
+                    feedback.append(f"评估建议: {s[:120]}")
+                # 趋势
+                trend = analysis.get("recent_trend", 0)
+                if trend < -0.5:
+                    feedback.append(
+                        f"注意: 近期得分呈下降趋势"
+                        f" ({trend:+.1f})"
+                    )
         except (ImportError, Exception):
             pass
 
-        # 2. 从用户测试反馈中获取改进建议
+        # 2. 从内存 optimizer 补充（当前进程的即时反馈）
+        if len(feedback) < 5:
+            try:
+                from .evolution.skill_optimizer import (
+                    get_skill_optimizer,
+                )
+                optimizer = get_skill_optimizer()
+                failures = optimizer.failure_history.get(
+                    skill_id, []
+                )
+                if failures:
+                    for entry in failures[-3:]:
+                        suggestions = entry.get(
+                            'improvement_suggestions', []
+                        )
+                        feedback.extend(suggestions[:2])
+                        reason = entry.get('reason', '')
+                        if reason and len(feedback) < 8:
+                            feedback.append(reason[:120])
+            except (ImportError, Exception):
+                pass
+
+        # 3. 从用户测试反馈中获取改进建议
         try:
             from web.services.feedback_service import (
                 get_user_feedback_for_training,
