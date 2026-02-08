@@ -423,8 +423,9 @@ class SimpleEvolutionAgent:
             1 for s in domain_skills.values() if s.get('unlocked', False)
         )
 
-        # 计算总等级
+        # 计算进化指数
         total_level = self.skill_coordinator.get_total_level()
+        evo = self.skill_coordinator.calculate_evolution_index()
         stage = self.skill_coordinator.get_current_stage()
         priority = self.skill_coordinator.get_current_priority()
 
@@ -440,11 +441,27 @@ class SimpleEvolutionAgent:
         domain_pct = int(priority['domain'] * 100)
 
         self.logger.info(f"✅ 双树进化模式已启用: {domain}")
-        self.logger.info(f"   📚 通用技能树: {general_unlocked}/{len(general_skills)} 已解锁")
-        self.logger.info(f"   🎯 领域技能树: {domain_unlocked}/{len(domain_skills)} 已解锁")
-        self.logger.info(f"   📊 当前阶段: {stage}({stage_name_cn})")
-        self.logger.info(f"   ⚖️  进化优先级: 通用{general_pct}% / 领域{domain_pct}%")
-        self.logger.info(f"   📈 总技能等级: {total_level}")
+        self.logger.info(
+            f"   📚 通用技能树: "
+            f"{general_unlocked}/{len(general_skills)} 已解锁"
+        )
+        self.logger.info(
+            f"   🎯 领域技能树: "
+            f"{domain_unlocked}/{len(domain_skills)} 已解锁"
+        )
+        self.logger.info(
+            f"   📊 进化阶段: {stage_name_cn}"
+            f" (指数: {evo['index']:.1f})"
+        )
+        self.logger.info(
+            f"   ⚖️  进化优先级: "
+            f"通用{general_pct}% / 领域{domain_pct}%"
+        )
+        self.logger.info(
+            f"   📈 总等级: {total_level}"
+            f" | 精通: {evo['detail']['mastered_skills']}"
+            f"/{evo['detail']['unlocked_skills']}"
+        )
 
     def _init_single_tree_mode(self, domain_path: Path, config: dict):
         """初始化单树模式（向后兼容）"""
@@ -795,6 +812,7 @@ class SimpleEvolutionAgent:
         """使用协调器执行双树进化"""
         # 显示当前进化阶段
         stage = self.skill_coordinator.get_current_stage()
+        evo = self.skill_coordinator.calculate_evolution_index()
         priority = self.skill_coordinator.get_current_priority()
         total_level = self.skill_coordinator.get_total_level()
 
@@ -809,8 +827,15 @@ class SimpleEvolutionAgent:
         general_pct = int(priority['general'] * 100)
         domain_pct = int(priority['domain'] * 100)
 
-        self.logger.info(f"🌱 进化阶段: {stage_name_cn} (总等级: {total_level})")
-        self.logger.info(f"   优先级: 通用{general_pct}% / 领域{domain_pct}%")
+        self.logger.info(
+            f"🌱 进化阶段: {stage_name_cn}"
+            f" (指数: {evo['index']:.1f})"
+        )
+        self.logger.info(
+            f"   优先级: 通用{general_pct}%"
+            f" / 领域{domain_pct}%"
+            f" | 总等级: {total_level}"
+        )
 
         # 从协调器获取下一个要进化的技能
         skill_tree, skill = self.skill_coordinator.select_next_skill()

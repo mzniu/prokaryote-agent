@@ -19,11 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 class EvolutionStage:
-    """进化阶段"""
-    SPROUTING = "sprouting"      # 萌芽期：总等级 < 30
-    GROWING = "growing"          # 成长期：30 <= 总等级 < 100
-    MATURING = "maturing"        # 成熟期：100 <= 总等级 < 300
-    SPECIALIZING = "specializing"  # 专精期：总等级 >= 300
+    """进化阶段（由多维进化指数决定）"""
+    SPROUTING = "sprouting"        # 萌芽期
+    GROWING = "growing"            # 成长期
+    MATURING = "maturing"          # 成熟期
+    SPECIALIZING = "specializing"  # 专精期
 
 
 class SkillEvolutionCoordinator:
@@ -37,12 +37,30 @@ class SkillEvolutionCoordinator:
         EvolutionStage.SPECIALIZING: {'general': 0.25, 'domain': 0.75},
     }
 
-    # 阶段边界
+    # 阶段边界（基于进化指数 0-100）
     STAGE_THRESHOLDS = {
         EvolutionStage.SPROUTING: 0,
-        EvolutionStage.GROWING: 30,
-        EvolutionStage.MATURING: 100,
-        EvolutionStage.SPECIALIZING: 300,
+        EvolutionStage.GROWING: 15,
+        EvolutionStage.MATURING: 40,
+        EvolutionStage.SPECIALIZING: 70,
+    }
+
+    # 各层级默认最大等级
+    DEFAULT_MAX_LEVELS = {
+        'basic': 20,
+        'intermediate': 30,
+        'advanced': 50,
+        'expert': 50,
+        'master': 50,
+    }
+
+    # 层级权重（用于 tier_score 计算）
+    TIER_WEIGHTS = {
+        'basic': 1,
+        'intermediate': 2,
+        'advanced': 3,
+        'expert': 4,
+        'master': 5,
     }
 
     def __init__(
@@ -107,17 +125,141 @@ class SkillEvolutionCoordinator:
         return self.get_general_level_sum() + self.get_domain_level_sum()
 
     def get_current_stage(self) -> str:
-        """获取当前进化阶段"""
-        total = self.get_total_level()
+        """获取当前进化阶段（基于多维进化指数）"""
+        index = self.calculate_evolution_index()['index']
 
-        if total >= self.STAGE_THRESHOLDS[EvolutionStage.SPECIALIZING]:
+        if index >= self.STAGE_THRESHOLDS[EvolutionStage.SPECIALIZING]:
             return EvolutionStage.SPECIALIZING
-        elif total >= self.STAGE_THRESHOLDS[EvolutionStage.MATURING]:
+        elif index >= self.STAGE_THRESHOLDS[EvolutionStage.MATURING]:
             return EvolutionStage.MATURING
-        elif total >= self.STAGE_THRESHOLDS[EvolutionStage.GROWING]:
+        elif index >= self.STAGE_THRESHOLDS[EvolutionStage.GROWING]:
             return EvolutionStage.GROWING
         else:
             return EvolutionStage.SPROUTING
+
+    def calculate_evolution_index(self) -> Dict[str, Any]:
+        """
+        计算多维进化指数
+
+        四个维度:
+        - breadth (广度): 已解锁技能数 / 技能树总数
+        - depth   (深度): Σ技能等级 / Σ最大等级(已解锁)
+        - tier    (层次): 已解锁层级的加权覆盖率
+        - mastery (实战): 达到50%等级上限的技能数 / 已解锁数
+
+        Returns:
+            包含 index(0-100) 和各维度分数的字典
+        """
+        all_skills = self._collect_all_skills()
+
+        total_count = len(all_skills)
+        if total_count == 0:
+            return self._empty_index()
+
+        unlocked = [
+            s for s in all_skills if s['unlocked']
+        ]
+        unlocked_count = len(unlocked)
+
+        # --- 广度 breadth ---
+        breadth = unlocked_count / total_count
+
+        # --- 深度 depth ---
+        level_sum = 0
+        max_level_sum = 0
+        for s in unlocked:
+            level_sum += s['level']
+            max_level_sum += s['max_level']
+        depth = (
+            level_sum / max_level_sum
+            if max_level_sum > 0 else 0.0
+        )
+
+        # --- 层次 tier ---
+        # 已解锁技能中各层级的加权得分
+        total_possible_weight = sum(
+            self.TIER_WEIGHTS.get(s['tier'], 1)
+            for s in all_skills
+        )
+        unlocked_weight = sum(
+            self.TIER_WEIGHTS.get(s['tier'], 1)
+            for s in unlocked
+        )
+        tier_score = (
+            unlocked_weight / total_possible_weight
+            if total_possible_weight > 0 else 0.0
+        )
+
+        # --- 实战 mastery ---
+        # 达到 50% 最大等级的技能数
+        mastered = sum(
+            1 for s in unlocked
+            if s['level'] >= s['max_level'] * 0.5
+        )
+        mastery = (
+            mastered / unlocked_count
+            if unlocked_count > 0 else 0.0
+        )
+
+        # 加权合成
+        index = (
+            breadth * 0.25
+            + depth * 0.35
+            + tier_score * 0.20
+            + mastery * 0.20
+        ) * 100
+
+        return {
+            'index': round(index, 1),
+            'breadth': round(breadth, 3),
+            'depth': round(depth, 3),
+            'tier': round(tier_score, 3),
+            'mastery': round(mastery, 3),
+            'detail': {
+                'total_skills': total_count,
+                'unlocked_skills': unlocked_count,
+                'level_sum': level_sum,
+                'max_level_sum': max_level_sum,
+                'mastered_skills': mastered,
+            }
+        }
+
+    def _collect_all_skills(self) -> List[Dict]:
+        """汇总两棵树的全部技能信息"""
+        result = []
+        for tree in (self.general_tree, self.domain_tree):
+            for sid, s in tree.get('skills', {}).items():
+                tier = s.get('tier', 'basic')
+                max_lvl = s.get(
+                    'max_level',
+                    self.DEFAULT_MAX_LEVELS.get(tier, 20)
+                )
+                result.append({
+                    'id': sid,
+                    'tier': tier,
+                    'level': s.get('level', 0),
+                    'max_level': max_lvl,
+                    'unlocked': s.get('unlocked', False),
+                })
+        return result
+
+    @staticmethod
+    def _empty_index() -> Dict[str, Any]:
+        """空技能树时的默认指数"""
+        return {
+            'index': 0.0,
+            'breadth': 0.0,
+            'depth': 0.0,
+            'tier': 0.0,
+            'mastery': 0.0,
+            'detail': {
+                'total_skills': 0,
+                'unlocked_skills': 0,
+                'level_sum': 0,
+                'max_level_sum': 0,
+                'mastered_skills': 0,
+            },
+        }
 
     def get_current_priority(self) -> Dict[str, float]:
         """获取当前优先级"""
@@ -136,7 +278,6 @@ class SkillEvolutionCoordinator:
 
     def get_evolvable_skills(self, tree: Dict) -> List[Dict]:
         """获取可进化的技能（已解锁且未满级）"""
-        max_levels = {'basic': 20, 'intermediate': 30, 'advanced': 50}
         skills = []
 
         for skill_id, skill in tree.get('skills', {}).items():
@@ -144,7 +285,10 @@ class SkillEvolutionCoordinator:
                 continue
 
             tier = skill.get('tier', 'basic')
-            max_level = skill.get('max_level', max_levels.get(tier, 20))
+            max_level = skill.get(
+                'max_level',
+                self.DEFAULT_MAX_LEVELS.get(tier, 20),
+            )
             current_level = skill.get('level', 0)
 
             if current_level < max_level:
@@ -347,26 +491,39 @@ class SkillEvolutionCoordinator:
 
     def get_evolution_context(self) -> Dict[str, Any]:
         """获取进化上下文"""
+        evo = self.calculate_evolution_index()
         return {
             'general_level': self.get_general_level_sum(),
             'domain_level': self.get_domain_level_sum(),
             'total_level': self.get_total_level(),
+            'evolution_index': evo,
             'stage': self.get_current_stage(),
             'priority': self.get_current_priority(),
             'evolution_count': self.evolution_count,
             'general_skills': {
-                k: {'level': v.get('level', 0), 'unlocked': v.get('unlocked', False)}
-                for k, v in self.general_tree.get('skills', {}).items()
+                k: {
+                    'level': v.get('level', 0),
+                    'unlocked': v.get('unlocked', False),
+                }
+                for k, v in self.general_tree.get(
+                    'skills', {}
+                ).items()
             },
             'domain_skills': {
-                k: {'level': v.get('level', 0), 'unlocked': v.get('unlocked', False)}
-                for k, v in self.domain_tree.get('skills', {}).items()
-            }
+                k: {
+                    'level': v.get('level', 0),
+                    'unlocked': v.get('unlocked', False),
+                }
+                for k, v in self.domain_tree.get(
+                    'skills', {}
+                ).items()
+            },
         }
 
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         stage = self.get_current_stage()
+        evo = self.calculate_evolution_index()
         stage_names = {
             EvolutionStage.SPROUTING: "萌芽期",
             EvolutionStage.GROWING: "成长期",
@@ -374,41 +531,88 @@ class SkillEvolutionCoordinator:
             EvolutionStage.SPECIALIZING: "专精期",
         }
 
-        general_unlocked = len(self.get_unlocked_skills(self.general_tree))
-        general_total = len(self.general_tree.get('skills', {}))
-        domain_unlocked = len(self.get_unlocked_skills(self.domain_tree))
-        domain_total = len(self.domain_tree.get('skills', {}))
+        general_unlocked = len(
+            self.get_unlocked_skills(self.general_tree)
+        )
+        general_total = len(
+            self.general_tree.get('skills', {})
+        )
+        domain_unlocked = len(
+            self.get_unlocked_skills(self.domain_tree)
+        )
+        domain_total = len(
+            self.domain_tree.get('skills', {})
+        )
 
         return {
             'stage': stage,
             'stage_name': stage_names.get(stage, stage),
+            'evolution_index': evo['index'],
+            'dimensions': {
+                'breadth': evo['breadth'],
+                'depth': evo['depth'],
+                'tier': evo['tier'],
+                'mastery': evo['mastery'],
+            },
             'total_level': self.get_total_level(),
+            'total_skills': evo['detail']['total_skills'],
+            'unlocked_skills': evo['detail']['unlocked_skills'],
+            'mastered_skills': evo['detail']['mastered_skills'],
             'general': {
                 'level_sum': self.get_general_level_sum(),
                 'unlocked': general_unlocked,
                 'total': general_total,
-                'evolutions': self.evolution_count.get('general', 0)
+                'evolutions': self.evolution_count.get(
+                    'general', 0
+                ),
             },
             'domain': {
                 'level_sum': self.get_domain_level_sum(),
                 'unlocked': domain_unlocked,
                 'total': domain_total,
-                'evolutions': self.evolution_count.get('domain', 0)
+                'evolutions': self.evolution_count.get(
+                    'domain', 0
+                ),
             },
-            'priority': self.get_current_priority()
+            'priority': self.get_current_priority(),
         }
 
     def print_status(self):
         """打印状态"""
         stats = self.get_stats()
         priority = stats['priority']
+        dims = stats['dimensions']
 
         print(f"\n{'='*50}")
-        print(f"进化阶段: {stats['stage_name']} (总等级: {stats['total_level']})")
-        print(f"当前优先级: 通用 {priority['general']:.0%} / 专业 {priority['domain']:.0%}")
+        print(
+            f"进化阶段: {stats['stage_name']}"
+            f" (进化指数: {stats['evolution_index']:.1f})"
+        )
+        print(
+            f"  广度={dims['breadth']:.0%}"
+            f" 深度={dims['depth']:.0%}"
+            f" 层次={dims['tier']:.0%}"
+            f" 实战={dims['mastery']:.0%}"
+        )
+        print(
+            f"技能: {stats['unlocked_skills']}"
+            f"/{stats['total_skills']} 已解锁"
+            f" | 精通: {stats['mastered_skills']}"
+            f" | 总等级: {stats['total_level']}"
+        )
+        print(
+            f"优先级: 通用 {priority['general']:.0%}"
+            f" / 专业 {priority['domain']:.0%}"
+        )
         print(f"{'='*50}")
-        print(f"通用技能: Lv.{stats['general']['level_sum']} "
-              f"({stats['general']['unlocked']}/{stats['general']['total']} 已解锁)")
-        print(f"专业技能: Lv.{stats['domain']['level_sum']} "
-              f"({stats['domain']['unlocked']}/{stats['domain']['total']} 已解锁)")
+        print(
+            f"通用: Lv.{stats['general']['level_sum']}"
+            f" ({stats['general']['unlocked']}"
+            f"/{stats['general']['total']} 解锁)"
+        )
+        print(
+            f"专业: Lv.{stats['domain']['level_sum']}"
+            f" ({stats['domain']['unlocked']}"
+            f"/{stats['domain']['total']} 解锁)"
+        )
         print(f"{'='*50}\n")
