@@ -434,7 +434,8 @@ class SkillGenerator:
                 skill_id=skill_id,
                 level=current_level,
                 eval_result=evaluation_result,
-                execution_result=training_result
+                execution_result=training_result,
+                training_task=training_task,
             )
 
             # 持久化训练档案
@@ -702,18 +703,20 @@ class SkillGenerator:
         skill_id: str,
         level: int,
         eval_result: Dict[str, Any],
-        execution_result: Dict[str, Any]
+        execution_result: Dict[str, Any],
+        training_task: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
         """
         记录训练失败并分析原因
 
-        当连续失败次数超过阈值时，自动触发 AI 技能修复。
+        当连续失败次数超过阈值时，自动触发 AI 多策略修复。
 
         Args:
             skill_id: 技能ID
             level: 当前等级
             eval_result: 评估结果
             execution_result: 执行结果
+            training_task: 触发失败的训练任务
 
         Returns:
             优化信息，包含连续失败次数、优化建议和修复结果
@@ -760,6 +763,7 @@ class SkillGenerator:
                     skill_id=skill_id,
                     failure_analysis=failure_analysis,
                     suggestions=suggestions,
+                    last_task=training_task,
                 )
 
                 result['repair_result'] = repair_result
