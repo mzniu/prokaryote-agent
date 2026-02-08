@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 from dataclasses import dataclass
 
+from prokaryote_agent.utils.json_utils import safe_json_loads
+
 try:
     import requests
     REQUESTS_AVAILABLE = True
@@ -557,7 +559,7 @@ def run_tests():
             
             if json_str:
                 try:
-                    data = json.loads(json_str)
+                    data = safe_json_loads(json_str)
                     test_code = data.get("test_code", "")
                     if test_code and "def test_" in test_code:
                         # 如果没有run_tests函数，自动添加
@@ -617,12 +619,12 @@ def run_tests():
             
             # 方法4: 尝试解析整个内容为JSON
             try:
-                data = json.loads(content.strip())
+                data = safe_json_loads(content.strip())
                 return {
                     "test_code": data.get("test_code", ""),
                     "test_cases": data.get("test_cases", [])
                 }
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, ValueError):
                 pass
             
             self.logger.warning("无法从响应中提取测试代码")
@@ -679,7 +681,7 @@ def run_tests():
             
             if json_str:
                 try:
-                    data = json.loads(json_str)
+                    data = safe_json_loads(json_str)
                     if "code" in data:
                         return {
                             "code": data.get("code", ""),
@@ -738,14 +740,14 @@ def run_tests():
             
             # 方法4: 尝试直接解析整个内容为JSON
             try:
-                data = json.loads(content.strip())
+                data = safe_json_loads(content.strip())
                 return {
                     "code": data.get("code", ""),
                     "description": data.get("description", ""),
                     "entry_function": data.get("entry_function", ""),
                     "dependencies": data.get("dependencies", [])
                 }
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, ValueError):
                 pass
             
             self.logger.warning("无法从响应中提取代码")

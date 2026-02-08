@@ -10,6 +10,8 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
+from prokaryote_agent.utils.json_utils import safe_json_loads
+
 logger = logging.getLogger(__name__)
 
 
@@ -215,8 +217,8 @@ def _parse_plan_response(
         return None
 
     try:
-        data = json.loads(text[start:end + 1])
-    except json.JSONDecodeError:
+        data = safe_json_loads(text[start:end + 1])
+    except (json.JSONDecodeError, ValueError):
         return None
 
     plan_list = data.get("plan", [])

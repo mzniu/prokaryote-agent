@@ -4,10 +4,11 @@ AI训练评估器
 使用AI对技能训练结果进行多维度评估，决定是否应该升级。
 """
 
-import json
 import logging
 import re
 from typing import Dict, Any, List, Optional
+
+from prokaryote_agent.utils.json_utils import safe_json_loads
 
 from .result import (
     EvaluationResult,
@@ -315,7 +316,7 @@ class TrainingEvaluator:
                 # 尝试直接解析
                 json_str = content.strip()
 
-            data = json.loads(json_str)
+            data = safe_json_loads(json_str)
 
             # 解析维度分数
             dimension_scores = []

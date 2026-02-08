@@ -26,6 +26,7 @@ from pathlib import Path
 from datetime import datetime
 
 from .skill_base import Skill, SkillMetadata, SkillLibrary
+from prokaryote_agent.utils.json_utils import safe_json_loads
 
 # 尝试导入评估模块
 try:
@@ -944,7 +945,7 @@ class SkillGenerator:
                 if json_match:
                     content = json_match.group(1).strip()
 
-                task = json.loads(content)
+                task = safe_json_loads(content)
 
                 # 确保必要字段
                 if 'name' not in task:
@@ -1388,7 +1389,7 @@ class SkillGenerator:
             if json_match:
                 content = json_match.group(1).strip()
 
-            parts = json.loads(content)
+            parts = safe_json_loads(content)
 
             execute_code = parts.get('execute_code', '')
             validate_code = parts.get('validate_code', '')
