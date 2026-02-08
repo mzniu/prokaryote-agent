@@ -800,7 +800,8 @@ class SkillGenerator:
         """
         在关键等级点进化技能代码
 
-        通过核心酶重新生成增强版技能代码
+        读取当前技能源码，连同增强规格一起传给核心酶，
+        让 AI 在现有实现基础上改进而非从零重写。
 
         Args:
             skill: 技能实例
@@ -814,6 +815,22 @@ class SkillGenerator:
             return False
 
         try:
+            # 读取当前技能源码
+            current_code = None
+            skill_path = (
+                self.library.library_path
+                / f"{skill.metadata.skill_id}.py"
+            )
+            if skill_path.exists():
+                try:
+                    current_code = skill_path.read_text(encoding='utf-8')
+                    self.logger.info(
+                        f"读取现有代码: {skill_path.name} "
+                        f"({len(current_code)} chars)"
+                    )
+                except Exception as e:
+                    self.logger.warning(f"读取现有代码失败: {e}")
+
             # 构建增强规格
             enhanced_spec = {
                 'id': skill.metadata.skill_id,
@@ -824,6 +841,8 @@ class SkillGenerator:
                 'capabilities': skill.get_capabilities(),
                 'level': new_level,
                 'enhancements': enhancements,
+                # 传入现有源码供 AI 改进
+                'current_code': current_code,
                 # 根据等级添加特定能力要求
                 'requirements': self._get_level_requirements(
                     new_level,
@@ -1440,6 +1459,7 @@ class SkillGenerator:
      ▸ 保存产出物: `context.save_output(output_type, title, content, format, category)` → path
      ▸ 日志: `context.log(message, level='info')`
    - **禁止直接import web_tools或ai_adapter，所有能力通过context调用**
+   - 可以使用 `from prokaryote_agent.utils.json_utils import safe_json_loads` 来安全解析AI返回的JSON
    - 最终结果存储在 `result` 变量中（dict类型）
 {skills_context}
 2. **validate_code**: validate_input方法的实现体（缩进8格）
@@ -1458,6 +1478,24 @@ class SkillGenerator:
 - 不要使用占位符或TODO注释
 - 代码应专注于"{skill_name}"的实际功能实现
 - 如果其他技能可以辅助完成任务，优先通过 context.call_skill() 复用而不是重复实现
+
+核心设计模式 — AI-first with hardcoded fallback:
+- 所有领域专业逻辑（分析、生成、推理、评估）必须优先通过 context.call_ai() 实现
+- 仅在 AI 不可用时回退到简单的规则/关键词/模板
+- **禁止**大量硬编码领域知识（如正则提取、关键词列表、固定模板）作为主路径
+- 推荐模式：
+  ```
+  # AI 主路径
+  ai_result = context.call_ai(structured_prompt)
+  if ai_result.get('success') and ai_result.get('content'):
+      data = safe_json_loads(ai_result['content'])
+      ...使用 data...
+  else:
+      # 简单规则回退
+      data = basic_rule_fallback(...)
+  ```
+- 回退逻辑应尽量简短，核心智能由 AI 提供
+- 这种模式使代码能在进化时被 AI 改进（更好的 prompt → 更好的结果）
 
 请以JSON格式返回，不要其他文字:
 {{
