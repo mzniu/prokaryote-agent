@@ -163,14 +163,22 @@ class SkillContext:
             full_metadata['execution_id'] = self.execution_id
             full_metadata['stored_at'] = datetime.now().isoformat()
 
+            # 底层 store_knowledge 签名:
+            # (title, content, domain, category,
+            #  source_url="", acquired_by="")
+            # tags/metadata 需要嵌入 content 或 title
+            tag_line = ""
+            if tags:
+                tag_line = (
+                    f"\n\nTags: {', '.join(tags)}"
+                )
             store_knowledge(
                 title=title,
-                content=content,
+                content=content + tag_line,
                 domain=self.domain,
                 category=category,
-                source=source or f"skill:{self.skill_id}",
-                tags=tags or [],
-                metadata=full_metadata
+                source_url=source or "",
+                acquired_by=f"skill:{self.skill_id}",
             )
 
             self._knowledge_stores += 1
