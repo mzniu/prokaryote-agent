@@ -307,16 +307,31 @@ class TrainingEvaluator:
         Returns:
             评估结果
         """
-        try:
-            # 提取JSON
-            json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', content)
-            if json_match:
-                json_str = json_match.group(1)
-            else:
-                # 尝试直接解析
-                json_str = content.strip()
+        # 策略1: 结构化JSON解析
+        result = self._parse_json_response(content, context)
+        if result:
+            return result
 
-            data = safe_json_loads(json_str)
+        # 策略2: 从自然语言文本中提取分数
+        self.logger.info("JSON解析失败，尝试从文本中提取评估结果")
+        result = self._parse_text_response(content, context)
+        if result:
+            return result
+
+        self.logger.warning(
+            f"无法从AI响应中解析评估结果，"
+            f"响应前500字符:\n{content[:500]}"
+        )
+        return None
+
+    def _parse_json_response(
+        self,
+        content: str,
+        context: EvaluationContext
+    ) -> Optional[EvaluationResult]:
+        """从AI响应中提取JSON格式的评估结果"""
+        try:
+            data = safe_json_loads(content)
 
             # 解析维度分数
             dimension_scores = []
@@ -373,7 +388,9 @@ class TrainingEvaluator:
                 dimension_scores=dimension_scores,
                 decision=decision,
                 overall_feedback=data.get("overall_feedback", ""),
-                improvement_suggestions=data.get("improvement_suggestions", []),
+                improvement_suggestions=data.get(
+                    "improvement_suggestions", []
+                ),
                 evaluation_method="ai",
                 raw_ai_response=content,
                 task_type=context.task_type,
@@ -381,9 +398,139 @@ class TrainingEvaluator:
             )
 
         except Exception as e:
-            self.logger.error(f"解析AI响应失败: {e}")
-            self.logger.debug(f"原始响应: {content[:500]}...")
+            self.logger.debug(f"JSON解析失败: {e}")
             return None
+
+    def _parse_text_response(
+        self,
+        content: str,
+        context: EvaluationContext
+    ) -> Optional[EvaluationResult]:
+        """
+        从自然语言文本中提取评估分数（AI未按JSON格式输出时的回退）
+
+        支持的模式:
+        - "总分: 7.5" / "总分：7.5分" / "total_score: 7.5"
+        - "维度名称: 8分" / "维度名称（8.5分）" / "维度名称: 8.5/10"
+        - "通过" / "未通过" / "建议升级" / "维持等级"
+        """
+        try:
+            # 提取各维度分数
+            dimension_scores = []
+            for dim in context.dimensions:
+                name = dim["name"]
+                weight = dim["weight"]
+                score = self._extract_dimension_score(content, name)
+                if score is not None:
+                    dimension_scores.append(DimensionScore(
+                        name=name,
+                        score=score,
+                        weight=weight,
+                        weighted_score=score * weight,
+                        feedback=""
+                    ))
+
+            # 提取总分
+            total_score = self._extract_total_score(content)
+
+            # 如果有维度分数但没总分，计算加权总分
+            if dimension_scores and total_score is None:
+                total_score = sum(
+                    ds.weighted_score for ds in dimension_scores
+                )
+
+            # 如果没有维度分数也没有总分，放弃
+            if total_score is None:
+                self.logger.debug("无法从文本中提取任何分数")
+                return None
+
+            # 判断通过
+            passed = (total_score / 10.0) >= context.pass_threshold
+
+            # 提取决策
+            decision = self._extract_decision(content)
+            if decision is None:
+                if passed:
+                    decision = LevelDecision.UPGRADE
+                else:
+                    decision = LevelDecision.NEEDS_PRACTICE
+
+            # 提取反馈文本（取前300字符作为整体反馈）
+            feedback = content.strip()[:300]
+
+            self.logger.info(
+                f"从文本提取评估: 总分={total_score:.1f}, "
+                f"维度数={len(dimension_scores)}, "
+                f"{'通过' if passed else '未通过'}"
+            )
+
+            return EvaluationResult(
+                skill_id=context.skill_id,
+                skill_name=context.skill_name,
+                current_level=context.current_level,
+                passed=passed,
+                total_score=total_score,
+                pass_threshold=context.pass_threshold * 10,
+                dimension_scores=dimension_scores,
+                decision=decision,
+                overall_feedback=feedback,
+                improvement_suggestions=[],
+                evaluation_method="ai_text",
+                raw_ai_response=content,
+                task_type=context.task_type,
+                task_description=context.task_description
+            )
+
+        except Exception as e:
+            self.logger.debug(f"文本解析失败: {e}")
+            return None
+
+    @staticmethod
+    def _extract_dimension_score(
+        text: str, dim_name: str
+    ) -> Optional[float]:
+        """从文本中提取指定维度的分数"""
+        # 模式: "维度名称: 8.5分" / "维度名称：8.5" / "维度名称（8.5分）"
+        # 也支持 "维度名称: 8.5/10"
+        patterns = [
+            rf'{re.escape(dim_name)}[：:\s]*(\d+(?:\.\d+)?)\s*[分/]',
+            rf'{re.escape(dim_name)}[：:\s]*(\d+(?:\.\d+)?)',
+            rf'{re.escape(dim_name)}[（(]\s*(\d+(?:\.\d+)?)\s*分?[）)]',
+        ]
+        for pattern in patterns:
+            m = re.search(pattern, text)
+            if m:
+                score = float(m.group(1))
+                if 0 <= score <= 10:
+                    return score
+        return None
+
+    @staticmethod
+    def _extract_total_score(text: str) -> Optional[float]:
+        """从文本中提取总分"""
+        patterns = [
+            r'(?:总分|total_score|加权总分|综合[评得]分)[：:\s]*(\d+(?:\.\d+)?)',
+            r'(\d+(?:\.\d+)?)\s*[分/]\s*(?:总分|满分)',
+            r'(?:最终|综合)\s*(?:评分|得分|分数)[：:\s]*(\d+(?:\.\d+)?)',
+        ]
+        for pattern in patterns:
+            m = re.search(pattern, text, re.IGNORECASE)
+            if m:
+                score = float(m.group(1))
+                if 0 <= score <= 10:
+                    return score
+        return None
+
+    @staticmethod
+    def _extract_decision(text: str) -> Optional[LevelDecision]:
+        """从文本中提取决策建议"""
+        if re.search(r'建议升级|recommend.*upgrade|升级到', text, re.I):
+            return LevelDecision.UPGRADE
+        if re.search(r'维持等级|maintain|保持当前', text, re.I):
+            return LevelDecision.MAINTAIN
+        if re.search(r'需要.*练习|needs.*practice|未通过', text, re.I):
+            return LevelDecision.NEEDS_PRACTICE
+        return None
 
     def _rule_evaluate(self, context: EvaluationContext) -> EvaluationResult:
         """
