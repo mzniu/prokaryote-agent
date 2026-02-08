@@ -519,6 +519,12 @@ class SimpleEvolutionAgent:
                 self.logger.error(f"进化循环错误: {e}")
                 time.sleep(5)
 
+        # 清理核心系统状态，允许下次重新初始化
+        try:
+            stop_prokaryote()
+        except Exception:
+            pass
+
         self.logger.info("👋 进化系统已停止")
         self.logger.info(f"   - 目标完成: {self.evolution_count}")
         self.logger.info(f"   - 技能进化: {self.skill_evolution_count}")
