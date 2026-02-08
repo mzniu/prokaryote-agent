@@ -165,6 +165,82 @@ class SkillGenerator:
         else:
             self.logger.info("技能生成器: 使用规则评估")
 
+    # ==================== 可用技能上下文 ====================
+
+    def _build_available_skills_context(
+        self,
+        exclude_skill_id: str = None,
+        domain: str = None,
+        max_skills: int = 20
+    ) -> str:
+        """
+        构建可用技能列表的上下文文本，供 AI 生成代码/任务时参考。
+
+        包含每个技能的 ID、名称、描述、等级和能力列表，
+        让 AI 知道可以通过 context.call_skill(skill_id, **kwargs)
+        调用哪些已有技能来协作完成任务。
+
+        Args:
+            exclude_skill_id: 排除当前技能自身（避免自递归）
+            domain: 如果指定，优先列出同领域技能
+            max_skills: 最多列出的技能数量
+
+        Returns:
+            格式化的技能列表文本，若无可用技能则返回空字符串
+        """
+        if not self.library:
+            return ""
+
+        all_skills = self.library.list_skills()
+        if not all_skills:
+            return ""
+
+        # 排除自身
+        if exclude_skill_id:
+            all_skills = [
+                s for s in all_skills if s.skill_id != exclude_skill_id
+            ]
+
+        # 只展示已学会的技能（level >= 1）
+        learned = [s for s in all_skills if s.level >= 1]
+        if not learned:
+            return ""
+
+        # 排序：同领域优先，然后按等级降序
+        def sort_key(s):
+            domain_match = 1 if (domain and s.domain == domain) else 0
+            return (-domain_match, -s.level, s.skill_id)
+
+        learned.sort(key=sort_key)
+        learned = learned[:max_skills]
+
+        # 构建文本
+        lines = [
+            "\n## 可调用的已有技能",
+            "以下技能可通过 `context.call_skill(skill_id, **kwargs)` 调用："
+        ]
+        for s in learned:
+            caps = ""
+            # 尝试获取已加载技能的能力列表
+            skill_instance = self.library.skills.get(s.skill_id)
+            if skill_instance:
+                try:
+                    cap_list = skill_instance.get_capabilities()
+                    if cap_list:
+                        caps = f"  能力: {', '.join(cap_list)}"
+                except Exception:
+                    pass
+            line = (
+                f"- `{s.skill_id}` | {s.name} (Lv.{s.level})"
+                f" — {s.description}"
+            )
+            if caps:
+                line += f"\n  {caps}"
+            lines.append(line)
+
+        lines.append("")
+        return "\n".join(lines)
+
     @property
     def pipeline(self) -> Optional['SkillPipeline']:
         """获取技能生成管线（延迟加载）"""
@@ -904,6 +980,13 @@ class SkillGenerator:
                 )
 
         difficulty = min(level // 5 + 1, 5)
+
+        # 构建可用技能上下文
+        skills_context = self._build_available_skills_context(
+            exclude_skill_id=skill_id,
+            domain=domain
+        )
+
         prompt = f"""你是一个AI技能训练任务生成器。请根据以下信息生成一个恰当的训练任务。
 
 技能信息:
@@ -912,11 +995,13 @@ class SkillGenerator:
 - 目标难度: {difficulty}/5
 {feedback_section}
 {plan_section}
+{skills_context}
 任务设计要求:
 1. 难度与等级匹配：等级0-4为基础，5-9为进阶，10-14为高级，15+为专家
 2. 任务应测试该技能的核心能力
 3. 提供具体、可执行的任务内容（不要抽象描述）
 4. 如果有历史反馈，针对性地设计任务来弥补薄弱环节
+5. 如果有可调用的其他技能，可设计需要技能协作的复合任务
 
 请以严格的JSON格式返回，不要包含其他文字:
 {{
@@ -1321,6 +1406,12 @@ class SkillGenerator:
 
         caps_str = ', '.join(capabilities) if capabilities else '通用'
 
+        # 构建可用技能上下文
+        skills_context = self._build_available_skills_context(
+            exclude_skill_id=skill_id,
+            domain=domain
+        )
+
         prompt = f"""你是一个Python技能代码生成器。请为以下技能生成核心实现代码。
 
 技能信息:
@@ -1350,7 +1441,7 @@ class SkillGenerator:
      ▸ 日志: `context.log(message, level='info')`
    - **禁止直接import web_tools或ai_adapter，所有能力通过context调用**
    - 最终结果存储在 `result` 变量中（dict类型）
-
+{skills_context}
 2. **validate_code**: validate_input方法的实现体（缩进8格）
    - 验证kwargs中的输入参数，返回bool
 
@@ -1366,6 +1457,7 @@ class SkillGenerator:
 - 所有基础能力(AI/联网/文件)统一通过context对象调用，不要直接import
 - 不要使用占位符或TODO注释
 - 代码应专注于"{skill_name}"的实际功能实现
+- 如果其他技能可以辅助完成任务，优先通过 context.call_skill() 复用而不是重复实现
 
 请以JSON格式返回，不要其他文字:
 {{
