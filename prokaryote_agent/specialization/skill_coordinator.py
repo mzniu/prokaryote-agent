@@ -13,7 +13,6 @@ import logging
 import random
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
-# datetime 保留备用
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +62,14 @@ class SkillEvolutionCoordinator:
         'master': 5,
     }
 
+    # 失败回退参数
+    COOLDOWN_SHORT = 3     # 连续失败3次 → 冷却轮数
+    COOLDOWN_LONG = 10     # 连续失败5次 → 冷却轮数
+    FAILURE_PENALTY_STEP = 0.2   # 每次连续失败的降权
+    FAILURE_PENALTY_MAX = 0.8    # 最大降权
+    PREREQ_BONUS_DIRECT = 0.3   # 直接前置加成
+    PREREQ_BONUS_INDIRECT = 0.15  # 间接前置加成
+
     def __init__(
         self,
         general_tree_path: str,
@@ -88,6 +95,13 @@ class SkillEvolutionCoordinator:
         # 统计
         self.evolution_count = {'general': 0, 'domain': 0}
 
+        # 失败追踪（持久化）
+        self._tracker_path = (
+            self.general_tree_path.parent.parent
+            / 'config' / 'failure_tracker.json'
+        )
+        self._failure_tracker = self._load_failure_tracker()
+
         logger.info(
             "协调器初始化: 通用技能 %d 个, 专业技能 %d 个",
             len(self.general_tree.get('skills', {})),
@@ -105,6 +119,45 @@ class SkillEvolutionCoordinator:
         """保存技能树"""
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(tree, f, ensure_ascii=False, indent=2)
+
+    # --------------------------------------------------
+    # 失败追踪持久化
+    # --------------------------------------------------
+
+    def _load_failure_tracker(self) -> Dict:
+        """加载失败追踪数据"""
+        if self._tracker_path.exists():
+            try:
+                with open(
+                    self._tracker_path, 'r', encoding='utf-8'
+                ) as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                logger.warning("失败追踪文件损坏, 重置")
+        return {'evolution_round': 0, 'skills': {}}
+
+    def _save_failure_tracker(self):
+        """保存失败追踪数据"""
+        self._tracker_path.parent.mkdir(
+            parents=True, exist_ok=True
+        )
+        with open(
+            self._tracker_path, 'w', encoding='utf-8'
+        ) as f:
+            json.dump(
+                self._failure_tracker, f,
+                ensure_ascii=False, indent=2,
+            )
+
+    @property
+    def evolution_round(self) -> int:
+        return self._failure_tracker.get(
+            'evolution_round', 0
+        )
+
+    @evolution_round.setter
+    def evolution_round(self, value: int):
+        self._failure_tracker['evolution_round'] = value
 
     def get_general_level_sum(self) -> int:
         """获取通用技能总等级"""
@@ -277,8 +330,12 @@ class SkillEvolutionCoordinator:
         return skills
 
     def get_evolvable_skills(self, tree: Dict) -> List[Dict]:
-        """获取可进化的技能（已解锁且未满级）"""
+        """获取可进化的技能（已解锁且未满级，排除冷却中的）"""
         skills = []
+        current_round = self.evolution_round
+        tracker_skills = self._failure_tracker.get(
+            'skills', {}
+        )
 
         for skill_id, skill in tree.get('skills', {}).items():
             if not skill.get('unlocked', False):
@@ -291,11 +348,19 @@ class SkillEvolutionCoordinator:
             )
             current_level = skill.get('level', 0)
 
-            if current_level < max_level:
-                skill_copy = skill.copy()
-                skill_copy['id'] = skill_id
-                skill_copy['max_level'] = max_level
-                skills.append(skill_copy)
+            if current_level >= max_level:
+                continue
+
+            # 冷却过滤
+            ft = tracker_skills.get(skill_id, {})
+            cooldown_until = ft.get('cooldown_until', 0)
+            if cooldown_until > current_round:
+                continue
+
+            skill_copy = skill.copy()
+            skill_copy['id'] = skill_id
+            skill_copy['max_level'] = max_level
+            skills.append(skill_copy)
 
         return skills
 
@@ -376,6 +441,10 @@ class SkillEvolutionCoordinator:
         Returns:
             (skill_type, skill) - skill_type: 'general' 或 'domain'
         """
+        # 递增进化轮次
+        self.evolution_round += 1
+        self._save_failure_tracker()
+
         priority = self.get_current_priority()
 
         # 检查解锁
@@ -402,27 +471,52 @@ class SkillEvolutionCoordinator:
 
     def _select_best_candidate(self, candidates: List[Dict]) -> Dict:
         """
-        从候选技能中选择最佳
+        基于多因子评分选择最佳进化候选
 
-        选择策略：
-        1. 优先低等级技能
-        2. 同等级优先基础技能
-        3. 考虑类别优先级
+        score = base_priority - failure_penalty + prereq_bonus
         """
         if not candidates:
             return None
 
-        # 按等级排序，同等级按tier排序
-        tier_order = {'basic': 0, 'intermediate': 1, 'advanced': 2}
+        tracker_skills = self._failure_tracker.get(
+            'skills', {}
+        )
+        boost_targets = self._get_boost_targets()
 
-        candidates.sort(key=lambda s: (
-            s.get('level', 0),
-            tier_order.get(s.get('tier', 'basic'), 0)
-        ))
+        scored = []
+        for c in candidates:
+            sid = c.get('id', '')
+            level = c.get('level', 0)
+            max_lvl = c.get('max_level', 20)
+            tier = c.get('tier', 'basic')
+            tier_order = {
+                'basic': 0, 'intermediate': 1,
+                'advanced': 2, 'expert': 3, 'master': 4,
+            }
 
-        # 取前3个低等级技能随机选一个（避免太固定）
-        top_candidates = candidates[:min(3, len(candidates))]
-        return random.choice(top_candidates)
+            # 基础分（低等级优先 0~1）
+            base = 1.0 - (level / max_lvl if max_lvl else 0)
+            base += (4 - tier_order.get(tier, 0)) * 0.05
+
+            # 失败惩罚
+            ft = tracker_skills.get(sid, {})
+            consec = ft.get('consecutive_failures', 0)
+            penalty = min(
+                consec * self.FAILURE_PENALTY_STEP,
+                self.FAILURE_PENALTY_MAX,
+            )
+
+            # 前置加成
+            bonus = boost_targets.get(sid, 0.0)
+
+            score = base - penalty + bonus
+            scored.append((score, c))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        # top-3 随机选择
+        top = scored[:min(3, len(scored))]
+        return random.choice(top)[1]
 
     def record_evolution_success(
         self,
@@ -440,6 +534,15 @@ class SkillEvolutionCoordinator:
         """
         self.evolution_count[skill_type] = \
             self.evolution_count.get(skill_type, 0) + 1
+
+        # 清除失败记录
+        tracker_skills = self._failure_tracker.setdefault(
+            'skills', {}
+        )
+        if skill_id in tracker_skills:
+            del tracker_skills[skill_id]
+            self._save_failure_tracker()
+            logger.info("清除 %s 的失败记录", skill_id)
 
         # 更新技能树
         if skill_type == 'general':
@@ -489,6 +592,203 @@ class SkillEvolutionCoordinator:
         except Exception as e:
             logger.warning("AI优化失败: %s", e)
 
+    # --------------------------------------------------
+    # 失败记录 & 回退策略
+    # --------------------------------------------------
+
+    def record_evolution_failure(
+        self,
+        skill_type: str,
+        skill_id: str,
+        level: int,
+        reason: str = '',
+    ) -> Dict[str, Any]:
+        """
+        记录进化失败并触发回退策略
+
+        Returns:
+            回退策略信息: {
+                'action': 'cooldown'|'boost_prereqs'|'create_prereqs'|'none',
+                'details': ...
+            }
+        """
+        tracker_skills = self._failure_tracker.setdefault(
+            'skills', {}
+        )
+        rec = tracker_skills.setdefault(skill_id, {
+            'consecutive_failures': 0,
+            'total_failures': 0,
+            'cooldown_until': 0,
+            'last_failed_level': 0,
+            'failure_reasons': [],
+            'boost_prerequisites': {},
+        })
+
+        rec['consecutive_failures'] += 1
+        rec['total_failures'] += 1
+        rec['last_failed_level'] = level
+        if reason and reason not in rec['failure_reasons']:
+            rec['failure_reasons'].append(reason)
+        # 只保留最近 5 条原因
+        rec['failure_reasons'] = rec['failure_reasons'][-5:]
+
+        consec = rec['consecutive_failures']
+        current_round = self.evolution_round
+        result = {'action': 'none', 'details': {}}
+
+        if consec >= 5:
+            # 长期冷却
+            rec['cooldown_until'] = (
+                current_round + self.COOLDOWN_LONG
+            )
+            result['action'] = 'long_cooldown'
+            result['details'] = {
+                'cooldown_rounds': self.COOLDOWN_LONG,
+                'until_round': rec['cooldown_until'],
+            }
+            logger.warning(
+                "技能 %s 连续失败 %d 次, 长期冷却 %d 轮",
+                skill_id, consec, self.COOLDOWN_LONG,
+            )
+        elif consec >= 3:
+            # 短期冷却 + 尝试提升前置
+            rec['cooldown_until'] = (
+                current_round + self.COOLDOWN_SHORT
+            )
+            boost = self._find_prerequisite_boost_targets(
+                skill_type, skill_id
+            )
+            rec['boost_prerequisites'] = dict(boost)
+            result['action'] = 'boost_prereqs'
+            result['details'] = {
+                'cooldown_rounds': self.COOLDOWN_SHORT,
+                'until_round': rec['cooldown_until'],
+                'boost_targets': boost,
+            }
+            logger.info(
+                "技能 %s 连续失败 %d 次, 冷却 %d 轮,"
+                " 提升前置: %s",
+                skill_id, consec, self.COOLDOWN_SHORT,
+                list(boost.keys()),
+            )
+        else:
+            # 降权但不冷却
+            result['action'] = 'deprioritize'
+            result['details'] = {
+                'penalty': min(
+                    consec * self.FAILURE_PENALTY_STEP,
+                    self.FAILURE_PENALTY_MAX,
+                ),
+            }
+
+        self._save_failure_tracker()
+        return result
+
+    def _find_prerequisite_boost_targets(
+        self,
+        skill_type: str,
+        skill_id: str,
+    ) -> Dict[str, float]:
+        """
+        查找失败技能的前置技能中值得提升的目标
+
+        Returns:
+            {skill_id: bonus} — 直接前置 0.3, 间接前置 0.15
+        """
+        tree = (
+            self.general_tree
+            if skill_type == 'general'
+            else self.domain_tree
+        )
+        skills = tree.get('skills', {})
+        target_skill = skills.get(skill_id, {})
+        prereqs = target_skill.get('prerequisites', [])
+
+        boost = {}
+
+        for pid in prereqs:
+            prereq = skills.get(pid)
+            if prereq is None:
+                continue
+            tier = prereq.get('tier', 'basic')
+            max_lvl = prereq.get(
+                'max_level',
+                self.DEFAULT_MAX_LEVELS.get(tier, 20)
+            )
+            lvl = prereq.get('level', 0)
+            # 前置技能尚未达到 50% 上限 → 值得提升
+            if lvl < max_lvl * 0.5:
+                boost[pid] = self.PREREQ_BONUS_DIRECT
+
+            # 沿链向上：前置的前置
+            for ppid in prereq.get('prerequisites', []):
+                pp = skills.get(ppid)
+                if pp is None:
+                    continue
+                pp_tier = pp.get('tier', 'basic')
+                pp_max = pp.get(
+                    'max_level',
+                    self.DEFAULT_MAX_LEVELS.get(pp_tier, 20)
+                )
+                if pp.get('level', 0) < pp_max * 0.5:
+                    if ppid not in boost:
+                        boost[ppid] = self.PREREQ_BONUS_INDIRECT
+
+        return boost
+
+    def _get_boost_targets(self) -> Dict[str, float]:
+        """汇总所有失败技能的前置提升目标"""
+        boost = {}
+        for rec in self._failure_tracker.get(
+            'skills', {}
+        ).values():
+            bp = rec.get('boost_prerequisites', {})
+            if isinstance(bp, list):
+                # 兼容旧格式
+                for pid in bp:
+                    old = boost.get(pid, 0.0)
+                    boost[pid] = max(
+                        old, self.PREREQ_BONUS_DIRECT
+                    )
+            else:
+                for pid, val in bp.items():
+                    old = boost.get(pid, 0.0)
+                    boost[pid] = max(old, val)
+        return boost
+
+    def get_failure_summary(self) -> Dict[str, Any]:
+        """获取失败追踪摘要"""
+        tracker_skills = self._failure_tracker.get(
+            'skills', {}
+        )
+        current_round = self.evolution_round
+        cooling = []
+        struggling = []
+        for sid, rec in tracker_skills.items():
+            if rec.get('cooldown_until', 0) > current_round:
+                cooling.append({
+                    'skill_id': sid,
+                    'remaining': (
+                        rec['cooldown_until'] - current_round
+                    ),
+                    'consecutive_failures': rec.get(
+                        'consecutive_failures', 0
+                    ),
+                })
+            elif rec.get('consecutive_failures', 0) > 0:
+                struggling.append({
+                    'skill_id': sid,
+                    'consecutive_failures': rec[
+                        'consecutive_failures'
+                    ],
+                })
+        return {
+            'evolution_round': current_round,
+            'cooling_skills': cooling,
+            'struggling_skills': struggling,
+            'boost_targets': self._get_boost_targets(),
+        }
+
     def get_evolution_context(self) -> Dict[str, Any]:
         """获取进化上下文"""
         evo = self.calculate_evolution_index()
@@ -500,6 +800,8 @@ class SkillEvolutionCoordinator:
             'stage': self.get_current_stage(),
             'priority': self.get_current_priority(),
             'evolution_count': self.evolution_count,
+            'evolution_round': self.evolution_round,
+            'failure_summary': self.get_failure_summary(),
             'general_skills': {
                 k: {
                     'level': v.get('level', 0),
@@ -575,6 +877,7 @@ class SkillEvolutionCoordinator:
                 ),
             },
             'priority': self.get_current_priority(),
+            'failure_summary': self.get_failure_summary(),
         }
 
     def print_status(self):
@@ -615,4 +918,27 @@ class SkillEvolutionCoordinator:
             f" ({stats['domain']['unlocked']}"
             f"/{stats['domain']['total']} 解锁)"
         )
+
+        # 失败回退信息
+        fs = stats.get('failure_summary', {})
+        cooling = fs.get('cooling_skills', [])
+        struggling = fs.get('struggling_skills', [])
+        if cooling or struggling:
+            print(f"{'- '*25}")
+            if cooling:
+                names = [
+                    f"{c['skill_id']}({c['remaining']}轮)"
+                    for c in cooling
+                ]
+                print(f"冷却中: {', '.join(names)}")
+            if struggling:
+                names = [
+                    f"{s['skill_id']}(×{s['consecutive_failures']})"
+                    for s in struggling
+                ]
+                print(f"困难: {', '.join(names)}")
+            boost = fs.get('boost_targets', {})
+            if boost:
+                print(f"优先提升: {', '.join(boost.keys())}")
+
         print(f"{'='*50}\n")

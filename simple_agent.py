@@ -772,6 +772,13 @@ class SimpleEvolutionAgent:
                     self.logger.warning(
                         "❌ 解锁失败: %s", skill_id,
                     )
+                    skill_name = skill_info.get(
+                        'name', skill_id
+                    )
+                    self._handle_evolution_failure(
+                        skill_tree, skill_id,
+                        skill_name, 0,
+                    )
 
             else:  # train / repair
                 self.logger.info(
@@ -806,6 +813,13 @@ class SimpleEvolutionAgent:
                 else:
                     self.logger.warning(
                         "❌ 提升失败: %s", skill_id,
+                    )
+                    skill_name = skill_info.get(
+                        'name', skill_id
+                    )
+                    self._handle_evolution_failure(
+                        skill_tree, skill_id,
+                        skill_name, current_level,
                     )
 
     def _execute_coordinated_evolution(self):
@@ -900,6 +914,9 @@ class SimpleEvolutionAgent:
                     self._try_optimize_general_tree(skill_id, 1)
             else:
                 self.logger.warning(f"❌ 解锁失败: {skill_name}")
+                self._handle_evolution_failure(
+                    skill_tree, skill_id, skill_name, 0,
+                )
         else:
             # 提升已有技能
             self.logger.info(f"📈 提升技能: {skill_name} [{tree_label}]")
@@ -938,6 +955,50 @@ class SimpleEvolutionAgent:
                     self._try_optimize_general_tree(skill_id, new_level)
             else:
                 self.logger.warning(f"❌ 提升失败: {skill_name}")
+                self._handle_evolution_failure(
+                    skill_tree, skill_id, skill_name,
+                    current_level,
+                )
+
+    def _handle_evolution_failure(
+        self,
+        skill_tree: str,
+        skill_id: str,
+        skill_name: str,
+        level: int,
+    ):
+        """处理进化失败, 调用协调器回退策略"""
+        if not self.skill_coordinator:
+            return
+
+        result = self.skill_coordinator.record_evolution_failure(
+            skill_tree, skill_id, level,
+        )
+        action = result.get('action', 'none')
+        details = result.get('details', {})
+
+        if action == 'deprioritize':
+            penalty = details.get('penalty', 0)
+            self.logger.info(
+                f"   ↘ {skill_name} 优先级降低"
+                f" (惩罚: {penalty:.0%})"
+            )
+        elif action == 'boost_prereqs':
+            cooldown = details.get('cooldown_rounds', 0)
+            targets = details.get('boost_targets', {})
+            self.logger.info(
+                f"   ⏸ {skill_name} 冷却 {cooldown} 轮"
+            )
+            if targets:
+                self.logger.info(
+                    f"   ↗ 优先提升前置: "
+                    f"{', '.join(targets.keys())}"
+                )
+        elif action in ('long_cooldown',):
+            cooldown = details.get('cooldown_rounds', 0)
+            self.logger.warning(
+                f"   ⏸ {skill_name} 长期冷却 {cooldown} 轮"
+            )
 
     def _check_and_unlock_new_skills(self):
         """检查并自动解锁满足前置条件的技能"""
