@@ -332,7 +332,18 @@ else:
         }
         
         url = f"{self.config.api_base}/chat/completions"
-        
+
+        # DEBUG: 记录完整输入
+        self.logger.debug(
+            "AI请求 [model=%s, temp=%s, max_tokens=%s]\n"
+            "===== PROMPT START =====\n%s\n"
+            "===== PROMPT END =====",
+            self.config.model,
+            self.config.temperature,
+            self.config.max_tokens,
+            prompt,
+        )
+
         # 重试机制
         for attempt in range(self.config.max_retries):
             try:
@@ -369,6 +380,15 @@ else:
                             continue
                     
                     self.logger.info(f"API调用成功，返回内容长度: {len(content)}")
+
+                    # DEBUG: 记录完整输出
+                    self.logger.debug(
+                        "AI响应 [len=%d]\n"
+                        "===== RESPONSE START =====\n%s\n"
+                        "===== RESPONSE END =====",
+                        len(content), content,
+                    )
+
                     return {
                         "success": True,
                         "content": content,
